@@ -16,9 +16,11 @@ set -a
 source .env
 set +a
 
-echo "Namespace:  $NAMESPACE"
-echo "Registry:   $REGISTRY"
-echo "Image Tag:  $TAG"
+echo "Namespace:   $NAMESPACE"
+echo "Registry:    $REGISTRY"
+echo "Image Tag:   $TAG"
+echo "LLM Gateway: $LLM_GATEWAY_URL"
+echo "LLM Model:   $LLM_MODEL"
 echo "============================================="
 
 # 2. Build Container Images
