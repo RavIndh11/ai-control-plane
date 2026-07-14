@@ -1,0 +1,10 @@
+# Placeholder Helm values for MinIO object storage (immutable GRC audit logs)
+mode: standalone
+
+replicas: 1
+
+persistence:
+  enabled: true
+  size: 10Gi
+
+defaultBuckets: "audit-logs,compliance-evidence"

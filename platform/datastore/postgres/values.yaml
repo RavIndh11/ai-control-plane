@@ -1,0 +1,11 @@
+# Placeholder Helm values for PostgreSQL with pgvector
+image:
+  registry: docker.io
+  repository: bitnami/postgresql-repmgr
+  tag: 16.2.0
+
+primary:
+  initdb:
+    scripts:
+      create_extensions.sql: |
+        CREATE EXTENSION IF NOT EXISTS vector;

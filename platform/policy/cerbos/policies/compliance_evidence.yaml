@@ -1,0 +1,33 @@
+# Cerbos Resource Policy for GRC Compliance Evidence
+# File: platform/policy/cerbos/policies/compliance_evidence.yaml
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "compliance_evidence"
+  rules:
+    # Rule 1: Super Admin can read and manage all compliance logs
+    - actions: ["*"]
+      effect: EFFECT_ALLOW
+      roles:
+        - super-admin
+
+    # Rule 2: Compliance Auditor can view all compliance logs across all tenants
+    - actions: ["read"]
+      effect: EFFECT_ALLOW
+      roles:
+        - compliance-auditor
+
+    # Rule 3: Tenant Admin can view compliance logs generated for their own tenant
+    - actions: ["read"]
+      effect: EFFECT_ALLOW
+      roles:
+        - tenant-admin
+      condition:
+        match:
+          expr: request.resource.attr.tenant_id == request.principal.attr.tenant_id
+
+    # Rule 4: System/Automated Workloads (via Spire) can write compliance logs
+    - actions: ["create"]
+      effect: EFFECT_ALLOW
+      roles:
+        - system-workload

@@ -1,0 +1,30 @@
+# Cerbos Resource Policy for Agent Threads
+# File: platform/policy/cerbos/policies/agent_threads.yaml
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: "default"
+  resource: "agent_thread"
+  rules:
+    # Rule 1: Super Admin has full access to all agent threads
+    - actions: ["*"]
+      effect: EFFECT_ALLOW
+      roles:
+        - super-admin
+
+    # Rule 2: Tenant Users can view and interact with threads in their own tenant
+    - actions: ["read", "write"]
+      effect: EFFECT_ALLOW
+      roles:
+        - tenant-user
+      condition:
+        match:
+          expr: request.resource.attr.tenant_id == request.principal.attr.tenant_id
+
+    # Rule 3: Tenant Admins can view, interact with, and delete threads in their own tenant
+    - actions: ["read", "write", "delete"]
+      effect: EFFECT_ALLOW
+      roles:
+        - tenant-admin
+      condition:
+        match:
+          expr: request.resource.attr.tenant_id == request.principal.attr.tenant_id

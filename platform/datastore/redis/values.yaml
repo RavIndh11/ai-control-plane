@@ -1,0 +1,11 @@
+# Placeholder Helm values for Redis cache and LangGraph state store
+image:
+  registry: docker.io
+  repository: bitnami/redis
+  tag: 7.2.4
+
+architecture: standalone
+
+auth:
+  enabled: true
+  sentinel: false
