@@ -1,1 +1,47 @@
-# Placeholder for tenant-specific RBAC
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-admin-role
+  namespace: tenant-template
+rules:
+  - apiGroups: ["", "apps", "batch"]
+    resources: ["pods", "pods/log", "services", "deployments", "configmaps", "secrets", "jobs"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-user-role
+  namespace: tenant-template
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-admin-binding
+  namespace: tenant-template
+subjects:
+  - kind: Group
+    name: "tenant-template-admins"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: tenant-admin-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-user-binding
+  namespace: tenant-template
+subjects:
+  - kind: Group
+    name: "tenant-template-users"
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: tenant-user-role
+  apiGroup: rbac.authorization.k8s.io

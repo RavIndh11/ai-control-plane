@@ -1,1 +1,52 @@
-# Placeholder for tenant network isolation
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tenant-isolation-policy
+  namespace: tenant-template
+spec:
+  podSelector: {} # Apply to all pods in the namespace
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 1. Allow ingress from pods within the SAME tenant namespace
+    - from:
+        - podSelector: {}
+    # 2. Allow ingress from the control plane namespace (for orchestrator connections)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control-plane
+  egress:
+    # 1. Allow egress to pods within the SAME tenant namespace
+    - to:
+        - podSelector: {}
+    # 2. Allow egress to CoreDNS for name resolution (running in kube-system)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # 3. Allow egress to the control-plane namespace to query Postgres/Redis datastores
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: control-plane
+      ports:
+        - protocol: TCP
+          port: 8000 # Governance Engine
+        - protocol: TCP
+          port: 8001 # Agent Orchestrator
+        - protocol: TCP
+          port: 5432 # Postgres
+        - protocol: TCP
+          port: 6379 # Redis
+        - protocol: TCP
+          port: 9000 # MinIO API
