@@ -52,6 +52,8 @@ app = FastAPI(
 )
 
 GOV_URL = os.getenv("GOVERNANCE_ENGINE_URL", "http://localhost:8000")
+LLM_GATEWAY_URL = os.getenv("LLM_GATEWAY_URL", "http://localhost:4000/v1")
+LLM_MODEL = os.getenv("LLM_MODEL", "llama2")
 
 # --- LangGraph Agent State Definition ---
 class AgentState(TypedDict):
@@ -113,7 +115,27 @@ def generation_node(state: AgentState) -> AgentState:
         return state
         
     user_input = state["input"]
-    output = f"Processed query '{user_input}' successfully within tenant context."
+    output = ""
+    
+    try:
+        # Request completion from LLM Gateway (LiteLLM / Ollama)
+        with httpx.Client() as client:
+            res = client.post(
+                f"{LLM_GATEWAY_URL}/chat/completions",
+                json={
+                    "model": LLM_MODEL,
+                    "messages": [{"role": "user", "content": user_input}],
+                    "temperature": 0.7
+                },
+                timeout=5.0
+            )
+            if res.status_code == 200:
+                output = res.json()["choices"][0]["message"]["content"]
+            else:
+                raise Exception(f"Gateway status: {res.status_code}")
+    except Exception as e:
+        print(f"[Warning] LLM Gateway unreachable ({e}). Using mock local generation node.")
+        output = f"Processed query '{user_input}' successfully within tenant context."
     
     return {
         "input": state["input"],

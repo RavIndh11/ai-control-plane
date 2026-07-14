@@ -65,6 +65,10 @@ spec:
               value: "http://governance-engine:8000"
             - name: REDIS_URL
               value: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+            - name: LLM_GATEWAY_URL
+              value: "http://litellm:4000/v1"
+            - name: LLM_MODEL
+              value: "llama2"
 ---
 apiVersion: v1
 kind: Service
