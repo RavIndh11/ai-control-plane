@@ -66,8 +66,12 @@ function App() {
   const [isSending, setIsSending] = useState<boolean>(false);
 
   // --- API Base URLs ---
-  const GOV_API = 'http://localhost:8000';
-  const ORCH_API = 'http://localhost:8001';
+  const GOV_API = window.location.hostname === 'localhost' 
+    ? 'http://localhost:8000' 
+    : `${window.location.protocol}//${window.location.hostname}:30080`;
+  const ORCH_API = window.location.hostname === 'localhost' 
+    ? 'http://localhost:8001' 
+    : `${window.location.protocol}//${window.location.hostname}:30081`;
 
   // --- Check Backend Connection ---
   useEffect(() => {

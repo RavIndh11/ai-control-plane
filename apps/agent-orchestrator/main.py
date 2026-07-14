@@ -4,6 +4,7 @@ from typing import Dict, Any, List, TypedDict, Optional
 import uuid
 import httpx
 from datetime import datetime
+import os
 from langgraph.graph import StateGraph, END
 
 app = FastAPI(
@@ -11,6 +12,9 @@ app = FastAPI(
     description="Multi-agent orchestrator service built on LangGraph",
     version="1.0.0"
 )
+
+GOV_URL = os.getenv("GOVERNANCE_ENGINE_URL", "http://localhost:8000")
+
 
 # --- LangGraph Agent State Definition ---
 class AgentState(TypedDict):
@@ -37,7 +41,7 @@ def guardrail_node(state: AgentState) -> AgentState:
         try:
             with httpx.Client() as client:
                 client.post(
-                    "http://localhost:8000/api/v1/evidence",
+                    f"{GOV_URL}/api/v1/evidence",
                     headers={"X-Tenant-ID": state["tenant_id"]},
                     json={
                         "control_id": "SOC2-CC-6.1",
