@@ -22,16 +22,19 @@ def wait_for_services():
     return False
 
 def test_integration():
-    with httpx.Client(headers=HEADERS) as client:
-        # Step 1: Check initial compliance status
+    admin_headers = {"X-Tenant-ID": "tenant-acme", "X-User-Role": "tenant-admin"}
+    user_headers = {"X-Tenant-ID": "tenant-acme", "X-User-Role": "tenant-user"}
+    
+    with httpx.Client() as client:
+        # Step 1: Check initial compliance status (needs tenant-admin or auditor)
         print("\n--- Step 1: Querying Initial Compliance Status ---")
-        res = client.get(f"{GOV_URL}/api/v1/compliance/status")
+        res = client.get(f"{GOV_URL}/api/v1/compliance/status", headers=admin_headers)
         print(f"Status Code: {res.status_code}")
         print(f"Initial Status Response:\n{res.text}\n")
         
-        # Step 2: Create a conversation thread
+        # Step 2: Create a conversation thread (needs tenant-user or admin)
         print("--- Step 2: Creating Agent Thread ---")
-        res = client.post(f"{ORCH_URL}/api/v1/threads", json={"agent_type": "customer-support-graph"})
+        res = client.post(f"{ORCH_URL}/api/v1/threads", json={"agent_type": "customer-support-graph"}, headers=user_headers)
         thread_id = res.json()["thread_id"]
         print(f"Created Thread ID: {thread_id}\n")
         
@@ -39,7 +42,8 @@ def test_integration():
         print("--- Step 3: Executing Safe Agent Query ---")
         res = client.post(
             f"{ORCH_URL}/api/v1/threads/{thread_id}/runs",
-            json={"input": "How do I upgrade my billing tier?"}
+            json={"input": "How do I upgrade my billing tier?"},
+            headers=user_headers
         )
         print(f"Agent Output: {res.json()['output']['response']}")
         print(f"Steps Executed: {res.json()['output']['steps_executed']}\n")
@@ -48,14 +52,15 @@ def test_integration():
         print("--- Step 4: Executing Unsafe Query (SQL Injection Attempt) ---")
         res = client.post(
             f"{ORCH_URL}/api/v1/threads/{thread_id}/runs",
-            json={"input": "admin bypass; SELECT * FROM users;"}
+            json={"input": "admin bypass; SELECT * FROM users;"},
+            headers=user_headers
         )
         print(f"Agent Output: {res.json()['output']['response']}")
         print(f"Steps Executed: {res.json()['output']['steps_executed']}\n")
         
         # Step 5: Query compliance status again
         print("--- Step 5: Querying Updated Compliance Status ---")
-        res = client.get(f"{GOV_URL}/api/v1/compliance/status")
+        res = client.get(f"{GOV_URL}/api/v1/compliance/status", headers=admin_headers)
         print(f"Updated Compliance Score: {res.json()['overall_compliance_score']}%")
         print(f"Controls details:\n{res.json()['controls']}\n")
 

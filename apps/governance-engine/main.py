@@ -2,16 +2,44 @@ from fastapi import FastAPI, HTTPException, Header, Depends
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Optional
 import uuid
+import os
+import httpx
 from datetime import datetime
+from sqlalchemy import create_engine, Column, String, DateTime, JSON, text
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker, Session
+
+# --- Database Configurations ---
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./governance.db")
+CERBOS_URL = os.getenv("CERBOS_URL", "http://localhost:3592")
+
+connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# --- Database Models ---
+class DBComplianceEvidence(Base):
+    __tablename__ = "compliance_evidence"
+
+    evidence_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    tenant_id = Column(String(64), index=True, nullable=False)
+    control_id = Column(String(100), index=True, nullable=False)
+    source_component = Column(String(100), nullable=False)
+    event_type = Column(String(100), nullable=False)
+    severity = Column(String(20), index=True, nullable=False)
+    payload = Column(JSON, nullable=False)
+    minio_object_path = Column(String(512), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+# Auto-create tables on startup
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Governance Engine API",
     description="Control-mapping and evidence service for Enterprise AI Control Plane",
     version="1.0.0"
 )
-
-# --- In-Memory Database (for mock demo fallback) ---
-EVIDENCE_DB: List[Dict[str, Any]] = []
 
 CONTROLS_DB = {
     "SOC2-CC-6.1": {"name": "Access Control Security", "description": "Ensure authorized access to assets and models."},
@@ -37,6 +65,10 @@ class EvidenceResponse(BaseModel):
     minio_object_path: str
     created_at: datetime
 
+    class Config:
+        orm_mode = True
+        from_attributes = True
+
 class ControlStatus(BaseModel):
     control_id: str
     status: str
@@ -47,11 +79,78 @@ class ComplianceStatusResponse(BaseModel):
     overall_compliance_score: float
     controls: List[ControlStatus]
 
-# --- Dependency to simulate tenant isolation ---
-def get_tenant_id(x_tenant_id: str = Header(..., alias="X-Tenant-ID")) -> str:
-    if not x_tenant_id:
-        raise HTTPException(status_code=400, detail="X-Tenant-ID header is missing")
-    return x_tenant_id
+# --- Database Session Dependency ---
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+# --- Identity / Principal Dependency ---
+def get_principal(
+    x_tenant_id: str = Header(..., alias="X-Tenant-ID"),
+    x_user_role: str = Header("tenant-user", alias="X-User-Role"),
+    x_user_id: str = Header("user_default", alias="X-User-ID")
+) -> Dict[str, Any]:
+    return {
+        "id": x_user_id,
+        "roles": [x_user_role],
+        "tenant_id": x_tenant_id
+    }
+
+# --- Cerbos Authz Verification ---
+def is_authorized(principal: Dict[str, Any], resource_kind: str, resource_id: str, action: str, resource_attr: Dict[str, Any]) -> bool:
+    payload = {
+        "requestId": str(uuid.uuid4()),
+        "principal": {
+            "id": principal["id"],
+            "roles": principal["roles"],
+            "attr": {"tenant_id": principal["tenant_id"]}
+        },
+        "resources": [
+            {
+                "actions": [action],
+                "resource": {
+                    "id": resource_id,
+                    "kind": resource_kind,
+                    "attr": resource_attr
+                }
+            }
+        ]
+    }
+    
+    try:
+        with httpx.Client() as client:
+            res = client.post(f"{CERBOS_URL}/api/check/resources", json=payload, timeout=2.0)
+            if res.status_code == 200:
+                results = res.json().get("results", [])
+                if results:
+                    effect = results[0].get("actions", {}).get(action, "EFFECT_DENY")
+                    return effect == "EFFECT_ALLOW"
+    except Exception:
+        # Fallback to local policy emulator if Cerbos PDP server is unreachable
+        print(f"[Warning] Cerbos PDP unreachable at {CERBOS_URL}. Emulating authorization rules locally.")
+    
+    # --- Local Emulation of compliance_evidence.yaml Policies ---
+    roles = principal["roles"]
+    tenant_id = principal["tenant_id"]
+    res_tenant_id = resource_attr.get("tenant_id")
+    
+    if "super-admin" in roles:
+        return True
+        
+    if action == "create":
+        # Allow system-workload to push evidence
+        return "system-workload" in roles or "agent-orchestrator" in roles or "tenant-admin" in roles or "tenant-user" in roles
+        
+    if action == "read":
+        if "compliance-auditor" in roles:
+            return True
+        if "tenant-admin" in roles and tenant_id == res_tenant_id:
+            return True
+            
+    return False
 
 # --- Endpoint Handlers ---
 
@@ -64,44 +163,79 @@ def health_check():
     return {"status": "ok"}
 
 @app.post("/api/v1/evidence", response_model=EvidenceResponse, status_code=201)
-def create_evidence(evidence: EvidenceCreate, tenant_id: str = Depends(get_tenant_id)):
-    evidence_id = uuid.uuid4()
+def create_evidence(
+    evidence: EvidenceCreate, 
+    principal: Dict[str, Any] = Depends(get_principal), 
+    db: Session = Depends(get_db)
+):
+    # Authz check
+    tenant_id = principal["tenant_id"]
+    if not is_authorized(principal, "compliance_evidence", "new", "create", {"tenant_id": tenant_id}):
+        raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot write GRC compliance evidence")
+
+    evidence_id = str(uuid.uuid4())
     timestamp = datetime.utcnow()
-    
-    # Simulate writing raw log to MinIO object store path
     minio_path = f"tenants/{tenant_id}/evidence/{timestamp.strftime('%Y-%m-%d')}/{evidence_id}.json"
     
-    evidence_entry = {
-        "evidence_id": evidence_id,
-        "tenant_id": tenant_id,
-        "control_id": evidence.control_id,
-        "source_component": evidence.source_component,
-        "event_type": evidence.event_type,
-        "severity": evidence.severity,
-        "payload": evidence.payload,
-        "minio_object_path": minio_path,
-        "created_at": timestamp
+    if not DATABASE_URL.startswith("sqlite"):
+        db.execute(text(f"SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+
+    db_evidence = DBComplianceEvidence(
+        evidence_id=evidence_id,
+        tenant_id=tenant_id,
+        control_id=evidence.control_id,
+        source_component=evidence.source_component,
+        event_type=evidence.event_type,
+        severity=evidence.severity,
+        payload=evidence.payload,
+        minio_object_path=minio_path,
+        created_at=timestamp
+    )
+    
+    db.add(db_evidence)
+    db.commit()
+    db.refresh(db_evidence)
+    
+    response_data = {
+        "evidence_id": uuid.UUID(db_evidence.evidence_id),
+        "control_id": db_evidence.control_id,
+        "source_component": db_evidence.source_component,
+        "event_type": db_evidence.event_type,
+        "severity": db_evidence.severity,
+        "payload": db_evidence.payload,
+        "minio_object_path": db_evidence.minio_object_path,
+        "created_at": db_evidence.created_at
     }
     
-    EVIDENCE_DB.append(evidence_entry)
-    
-    # Log the compliance event to console for transparency
-    print(f"[{timestamp.isoformat()}] GRC Audit Event saved for Tenant '{tenant_id}': Control={evidence.control_id}, Severity={evidence.severity}")
-    
-    return evidence_entry
+    return response_data
 
 @app.get("/api/v1/compliance/status", response_model=ComplianceStatusResponse)
-def get_compliance_status(tenant_id: str = Depends(get_tenant_id)):
-    # Filter evidence for this tenant
-    tenant_evidence = [e for e in EVIDENCE_DB if e["tenant_id"] == tenant_id]
-    
+def get_compliance_status(
+    principal: Dict[str, Any] = Depends(get_principal), 
+    db: Session = Depends(get_db)
+):
+    tenant_id = principal["tenant_id"]
+    # Authz check
+    if not is_authorized(principal, "compliance_evidence", "status", "read", {"tenant_id": tenant_id}):
+        raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot read GRC compliance status")
+
+    if not DATABASE_URL.startswith("sqlite"):
+        db.execute(text(f"SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+
     controls_summary = []
     compliant_count = 0
     
     for control_id in CONTROLS_DB.keys():
-        evidence_count = len([e for e in tenant_evidence if e["control_id"] == control_id])
-        
-        # Simple policy: if we have evidence, control is "compliant", else "action_required"
+        if DATABASE_URL.startswith("sqlite"):
+            evidence_count = db.query(DBComplianceEvidence).filter(
+                DBComplianceEvidence.tenant_id == tenant_id,
+                DBComplianceEvidence.control_id == control_id
+            ).count()
+        else:
+            evidence_count = db.query(DBComplianceEvidence).filter(
+                DBComplianceEvidence.control_id == control_id
+            ).count()
+            
         if evidence_count > 0:
             status = "compliant"
             compliant_count += 1
@@ -116,7 +250,6 @@ def get_compliance_status(tenant_id: str = Depends(get_tenant_id)):
             )
         )
     
-    # Calculate simple score
     total_controls = len(CONTROLS_DB)
     score = (compliant_count / total_controls) * 100.0 if total_controls > 0 else 100.0
     
