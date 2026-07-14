@@ -1,0 +1,80 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: garak-llm-security-scanner
+  namespace: control-plane
+spec:
+  schedule: "0 0 * * *" # Daily at midnight
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: garak-scanner
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: garak
+              image: python:3.11-slim
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  echo "============================================="
+                  echo "🛡️  1. Setting up Garak LLM Vulnerability Scanner"
+                  echo "============================================="
+                  pip install --no-cache-dir garak httpx
+
+                  echo "============================================="
+                  echo "🔍 2. Executing Red-Team Vulnerability Scan"
+                  echo "============================================="
+                  # Scan LiteLLM gateway for prompt injection and jailbreaks
+                  # Saves report as a JSON file
+                  python3 -m garak \
+                    --model_type openai \
+                    --model_name llama2 \
+                    --api_base http://litellm:4000/v1 \
+                    --probes promptinject,jailbreak \
+                    --report_format json \
+                    || true # Prevent scan failure from blocking evidence uploads
+
+                  # Locating the generated JSON report
+                  REPORT_FILE=$(ls -t garak_runs/*.json | head -n 1)
+                  echo "Vulnerability scan completed. Report saved at: $REPORT_FILE"
+
+                  echo "============================================="
+                  echo "🚦 3. Uploading Scan Metrics to Governance Engine"
+                  echo "============================================="
+                  # Read report contents
+                  REPORT_CONTENT=$(cat "$REPORT_FILE")
+
+                  # Send evidence payload to Governance Engine
+                  python3 -c "
+                  import httpx, json
+                  with open('$REPORT_FILE') as f:
+                      report = json.load(f)
+                  
+                  # Extract basic stats
+                  vulnerabilities_detected = len(report.get('evaluations', []))
+                  
+                  res = httpx.post(
+                      'http://governance-engine:8000/api/v1/evidence',
+                      headers={'X-Tenant-ID': 'system-admin', 'X-User-Role': 'super-admin'},
+                      json={
+                          'control_id': 'EU-AI-Act-Art-9',
+                          'source_component': 'garak-security-scanner',
+                          'event_type': 'vulnerability_scan_completed',
+                          'severity': 'high' if vulnerabilities_detected > 0 else 'info',
+                          'payload': {
+                              'vulnerabilities_detected': vulnerabilities_detected,
+                              'report_details': report
+                          }
+                      },
+                      timeout=10.0
+                  )
+                  print('GRC Webhook response:', res.status_code, res.text)
+                  "

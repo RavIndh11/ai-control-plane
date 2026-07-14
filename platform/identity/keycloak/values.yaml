@@ -1,1 +1,41 @@
-# Placeholder Helm values for Keycloak
+# Helm values configuration for Keycloak Identity Provider
+# File: platform/identity/keycloak/values.yaml
+
+replicaCount: 1
+
+# Keycloak Admin Credentials (configurable via secrets or env in production)
+auth:
+  adminUser: admin
+  adminPassword: keycloak-secure-pass
+
+# Connect to the shared PostgreSQL datastore
+postgresql:
+  enabled: false # Do not deploy dedicated postgres container
+
+database:
+  vendor: postgres
+  host: postgres.control-plane.svc.cluster.local
+  port: 5432
+  database: keycloak
+  username: postgres
+  password: postgres-secure-pass
+
+# Production ingress rules
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+  rules:
+    - host: iam.control-plane.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+# Extra environment configs for multi-tenant realm setups
+extraEnvVars:
+  - name: KEYCLOAK_LOGLEVEL
+    value: INFO
+  - name: KC_FEATURES
+    value: "token-exchange,declarative-user-profile"

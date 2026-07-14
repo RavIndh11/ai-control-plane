@@ -1,1 +1,46 @@
-# Placeholder Helm values for LiteLLM
+# LiteLLM API Gateway Helm Configurations
+# File: platform/runtime/litellm/values.yaml
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/berriai/litellm
+  tag: main-latest
+  pullPolicy: IfNotPresent
+
+# Mount the LiteLLM config file
+config: |
+  model_list:
+    - model_name: llama2
+      litellm_params:
+        model: ollama/llama2
+        api_base: http://ollama.control-plane.svc.cluster.local:11434
+        tpm: 100000
+        rpm: 1000
+    - model_name: gpt-3.5-turbo
+      litellm_params:
+        model: openai/gpt-3.5-turbo
+        api_key: os.environ/OPENAI_API_KEY
+        
+  litellm_settings:
+    drop_params: true
+    set_headers:
+      x-litellm-proxy: true
+    telemetry: false
+
+# Database configurations for tracking spend, tokens, and custom API keys
+extraEnv:
+  - name: DATABASE_URL
+    value: "postgresql://postgres:postgres-secure-pass@postgres.control-plane.svc.cluster.local:5432/ai_control_plane"
+  - name: REDIS_HOST
+    value: "redis.control-plane.svc.cluster.local"
+  - name: REDIS_PORT
+    value: "6379"
+  - name: REDIS_PASSWORD
+    value: "redis-secure-pass"
+  - name: LITELLM_MASTER_KEY
+    value: "sk-litellm-master-secure-pass"
+
+service:
+  type: ClusterIP
+  port: 4000
