@@ -1,1 +1,45 @@
-# Placeholder Helm values for Langfuse
+# Helm values configuration for Langfuse LLM Observability Platform
+# File: platform/observability/langfuse/values.yaml
+
+replicaCount: 1
+
+image:
+  repository: langfuse/langfuse
+  tag: 2.15.0
+  pullPolicy: IfNotPresent
+
+# Disable default dedicated postgres subchart since we use the shared datastore
+postgresql:
+  enabled: false
+
+# Direct connection settings to PostgreSQL datastore
+database:
+  host: postgres.control-plane.svc.cluster.local
+  port: 5432
+  user: postgres
+  password: postgres-secure-pass
+  name: langfuse
+
+# Security credentials and salt
+env:
+  - name: NEXTAUTH_SECRET
+    value: "langfuse-auth-secret-key-secure"
+  - name: SALT
+    value: "langfuse-salt-value-for-hashing"
+  - name: ENCRYPTION_KEY
+    value: "langfuse-encryption-key-must-be-32-chars-long"
+  - name: PORT
+    value: "3000"
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  rules:
+    - host: langfuse.control-plane.local
+      paths:
+        - path: /
+          pathType: Prefix

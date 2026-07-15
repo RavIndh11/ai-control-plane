@@ -1,0 +1,41 @@
+# Helm values configuration for Ollama local LLM serving
+# File: platform/runtime/ollama/values.yaml
+
+replicaCount: 1
+
+image:
+  repository: ollama/ollama
+  tag: 0.1.28
+  pullPolicy: IfNotPresent
+
+# Persistent volume mounting to cache model downloads (e.g. llama2 weights)
+persistence:
+  enabled: true
+  size: 30Gi
+  accessModes:
+    - ReadWriteOnce
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+
+# Optional GPU allocation (e.g., Nvidia GPU config)
+# gpu:
+#   enabled: true
+#   type: nvidia
+#   number: 1
+
+service:
+  type: ClusterIP
+  port: 11434
+
+# Startup execution parameters to pull the llama2 model automatically
+extraEnv:
+  - name: OLLAMA_NUM_PARALLEL
+    value: "2"
+  - name: OLLAMA_ORIGINS
+    value: "*"
