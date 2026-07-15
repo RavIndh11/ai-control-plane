@@ -1,0 +1,36 @@
+# Qdrant Vector Database Helm Configurations
+# File: platform/datastore/qdrant/values.yaml
+
+replicaCount: 1
+
+image:
+  repository: qdrant/qdrant
+  tag: v1.8.4
+  pullPolicy: IfNotPresent
+
+# Persistent volume configuration for storing vector collection indexes
+persistence:
+  enabled: true
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Service configuration to expose Qdrant REST/gRPC API ports
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 6333
+      targetPort: 6333
+      protocol: TCP
+    - name: grpc
+      port: 6334
+      targetPort: 6334
+      protocol: TCP
+
+# Security settings (Enabling API Key authentication)
+extraEnv:
+  - name: QDRANT__SERVICE__API_KEY
+    value: "qdrant-master-secure-api-key"
+  - name: QDRANT__SERVICE__ENABLE_TELEMETRY
+    value: "false"

@@ -21,6 +21,7 @@ echo "Registry:    $REGISTRY"
 echo "Image Tag:   $TAG"
 echo "LLM Gateway: $LLM_GATEWAY_URL"
 echo "LLM Model:   $LLM_MODEL"
+echo "Ollama Host: $OLLAMA_HOST_IP"
 echo "============================================="
 
 # 2. Build Container Images

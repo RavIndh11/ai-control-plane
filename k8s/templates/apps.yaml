@@ -120,3 +120,12 @@ spec:
       nodePort: 30082
   selector:
     app: dashboard
+# --- OLLAMA (External LAN Service Mapping) ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: ${NAMESPACE}
+spec:
+  type: ExternalName
+  externalName: ${OLLAMA_HOST_IP}
