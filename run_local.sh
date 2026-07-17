@@ -2,30 +2,36 @@
 # File: run_local.sh
 set -e
 
-# Clear previous logs
-rm -f gov.log orch.log
+# Clear previous logs and local DBs
+rm -f gov.log orch.log governance.db orchestrator.db
 
 echo "============================================="
 echo "⚙️  1. Setting up Python Virtual Environment"
 echo "============================================="
 python3 -m venv venv
-source venv/bin/activate
+venv/bin/pip install --upgrade pip -q
+venv/bin/pip install -q \
+  -r apps/governance-engine/requirements.txt \
+  -r apps/agent-orchestrator/requirements.txt \
+  httpx
 
 echo "============================================="
-echo "📦 2. Installing Dependencies"
+echo "🔐 2. Loading .env Configuration"
 echo "============================================="
-pip install --upgrade pip
-pip install -r apps/governance-engine/requirements.txt -r apps/agent-orchestrator/requirements.txt httpx
+set -a
+# shellcheck disable=SC1091
+[ -f .env ] && source .env
+set +a
 
 echo "============================================="
 echo "🚀 3. Launching Backend Services"
 echo "============================================="
 echo "Starting Governance Engine on http://localhost:8000..."
-PYTHONPATH=. uvicorn apps.governance-engine.main:app --port 8000 > gov.log 2>&1 &
+PYTHONPATH=. venv/bin/uvicorn apps.governance-engine.main:app --port 8000 > gov.log 2>&1 &
 GOV_PID=$!
 
 echo "Starting Agent Orchestrator on http://localhost:8001..."
-PYTHONPATH=. uvicorn apps.agent-orchestrator.main:app --port 8001 > orch.log 2>&1 &
+PYTHONPATH=. venv/bin/uvicorn apps.agent-orchestrator.main:app --port 8001 > orch.log 2>&1 &
 ORCH_PID=$!
 
 # Trapping exit signals to stop background servers automatically
@@ -40,5 +46,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+echo "============================================="
+echo "🧪 5. Running Integration Tests"
+echo "============================================="
 # Run the python test flow
-python3 test_flow.py
+venv/bin/python test_flow.py

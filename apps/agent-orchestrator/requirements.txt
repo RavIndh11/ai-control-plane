@@ -6,3 +6,8 @@ pydantic
 sqlalchemy
 psycopg2-binary
 httpx
+python-jose[cryptography]
+qdrant-client
+opentelemetry-sdk
+opentelemetry-exporter-otlp
+opentelemetry-instrumentation-fastapi
