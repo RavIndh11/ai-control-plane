@@ -1,22 +1,26 @@
 /home/aravindh/Projects/enterprise-ai-control-plane/venv/lib/python3.14/site-packages/pydantic/_internal/_config.py:386: UserWarning: Valid config keys have changed in V2:
 * 'orm_mode' has been renamed to 'from_attributes'
   warnings.warn(message, UserWarning)
-INFO:     Started server process [33581]
+INFO:     Started server process [39919]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:42464 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42324 - "GET /health HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:42474 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42340 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:42484 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+INFO:     127.0.0.1:42354 - "POST /api/v1/evidence HTTP/1.1" 201 Created
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:42474 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42340 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:42488 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+INFO:     127.0.0.1:42364 - "POST /api/v1/evidence HTTP/1.1" 201 Created
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:42474 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42340 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+[Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
+INFO:     127.0.0.1:42340 - "GET /api/v1/compliance/ai-bom HTTP/1.1" 200 OK
+[Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
+INFO:     127.0.0.1:42340 - "GET /api/v1/compliance/topology HTTP/1.1" 200 OK
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [33581]
+INFO:     Finished server process [39919]

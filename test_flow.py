@@ -94,6 +94,22 @@ def test_integration():
         print(f"Final Compliance Score: {res.json()['overall_compliance_score']}%")
         print(f"Final Controls details:\n{res.json()['controls']}\n")
 
+        # Step 9: Query the compiled AI-BOM
+        print("--- Step 9: Querying Compiled AI-BOM ---")
+        res = client.get(f"{GOV_URL}/api/v1/compliance/ai-bom", headers=admin_headers)
+        print(f"BOM Status Code: {res.status_code}")
+        print(f"Total Discovered Assets: {res.json()['total_discovered_assets']}")
+        print(f"High Risk Assets Detected: {res.json()['high_risk_violations']}")
+        print(f"First Asset Info: {res.json()['assets'][0]}\n")
+
+        # Step 10: Query the Topology Graph
+        print("--- Step 10: Querying Topology Network Graph ---")
+        res = client.get(f"{GOV_URL}/api/v1/compliance/topology", headers=admin_headers)
+        print(f"Topology Status Code: {res.status_code}")
+        print(f"Discovered Nodes Count: {len(res.json()['nodes'])}")
+        print(f"Discovered Links Count: {len(res.json()['links'])}")
+        print(f"Nodes Sample: {res.json()['nodes'][:2]}\n")
+
 if __name__ == "__main__":
     if not wait_for_services():
         sys.exit(1)

@@ -258,3 +258,225 @@ def get_compliance_status(
         overall_compliance_score=round(score, 2),
         controls=controls_summary
     )
+
+# --- AI-SPM & AI-BOM Pydantic Models ---
+class AIBOMAsset(BaseModel):
+    asset_id: str
+    name: str
+    type: str
+    location: str
+    status: str
+    risk_level: str
+    risk_factors: List[str]
+
+class AIBOMResponse(BaseModel):
+    generated_at: datetime
+    total_discovered_assets: int
+    high_risk_violations: int
+    assets: List[AIBOMAsset]
+
+class TopologyNode(BaseModel):
+    id: str
+    label: str
+    type: str # 'endpoint', 'app', 'database', 'runtime'
+    status: str # 'safe', 'warning', 'danger'
+    details: str
+
+class TopologyLink(BaseModel):
+    source: str
+    target: str
+    label: str
+
+class TopologyResponse(BaseModel):
+    nodes: List[TopologyNode]
+    links: List[TopologyLink]
+
+# --- AI-SPM Endpoints ---
+
+@app.get("/api/v1/compliance/ai-bom", response_model=AIBOMResponse)
+def get_ai_bom(principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    tenant_id = principal["tenant_id"]
+    if not is_authorized(principal, "compliance_evidence", "status", "read", {"tenant_id": tenant_id}):
+        raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot read AI-BOM")
+
+    if not DATABASE_URL.startswith("sqlite"):
+        db.execute(text(f"SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+
+    # Fetch evidence logs to compute risks dynamically
+    if DATABASE_URL.startswith("sqlite"):
+        evidences = db.query(DBComplianceEvidence).filter(DBComplianceEvidence.tenant_id == tenant_id).all()
+    else:
+        evidences = db.query(DBComplianceEvidence).all()
+
+    # Track risk factors
+    guardrail_violations = [e for e in evidences if e.event_type == "guardrail_violation"]
+    agt_violations = [e for e in evidences if e.event_type == "agent_action_intercepted"]
+
+    assets = []
+    high_risk_count = 0
+
+    # 1. User/Developer workstation (Vector: Endpoint)
+    endpoint_risk = "info"
+    endpoint_factors = []
+    if guardrail_violations:
+        endpoint_risk = "medium"
+        endpoint_factors.append("policy_violation_in_history")
+    
+    assets.append(AIBOMAsset(
+        asset_id="ast_endpoint_01",
+        name=f"Developer Workstation ({principal['id']})",
+        type="developer_endpoint",
+        location=f"LAN Client Host IP (Tenant: {tenant_id})",
+        status="active",
+        risk_level=endpoint_risk,
+        risk_factors=endpoint_factors
+    ))
+
+    # 2. Agent Orchestrator (Vector: Agentic Monitor)
+    orch_risk = "info"
+    orch_factors = []
+    if agt_violations:
+        orch_risk = "high"
+        high_risk_count += 1
+        orch_factors.append("unapproved_tool_execution_intercepted")
+    
+    assets.append(AIBOMAsset(
+        asset_id="ast_orchestrator_01",
+        name="Agent Orchestrator (LangGraph Core)",
+        type="autonomous_agent",
+        location="Kubernetes Cluster Pod Namespace",
+        status="active",
+        risk_level=orch_risk,
+        risk_factors=orch_factors
+    ))
+
+    # 3. LiteLLM Proxy Gateway (Vector: Network & API Proxy)
+    assets.append(AIBOMAsset(
+        asset_id="ast_gateway_01",
+        name="LiteLLM API Gateway Router",
+        type="ai_gateway_proxy",
+        location="Kubernetes Cluster Service (Port 4000)",
+        status="active",
+        risk_level="info",
+        risk_factors=[]
+    ))
+
+    # 4. External Ollama Machine (Vector: External Host)
+    assets.append(AIBOMAsset(
+        asset_id="ast_llm_01",
+        name="External Ollama Model Runner",
+        type="llm_model_runtime",
+        location="LAN Server IP (Port 11434)",
+        status="active",
+        risk_level="info",
+        risk_factors=[]
+    ))
+
+    # 5. Qdrant & Postgres Databases (Vector: Datastore)
+    assets.append(AIBOMAsset(
+        asset_id="ast_qdrant_01",
+        name="Qdrant Vector Database",
+        type="vector_datastore",
+        location="Kubernetes Cluster StatefulSet (Port 6333)",
+        status="active",
+        risk_level="info",
+        risk_factors=[]
+    ))
+
+    return AIBOMResponse(
+        generated_at=datetime.utcnow(),
+        total_discovered_assets=len(assets),
+        high_risk_violations=high_risk_count,
+        assets=assets
+    )
+
+@app.get("/api/v1/compliance/topology", response_model=TopologyResponse)
+def get_topology(principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    tenant_id = principal["tenant_id"]
+    if not is_authorized(principal, "compliance_evidence", "status", "read", {"tenant_id": tenant_id}):
+        raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot read topology map")
+
+    if not DATABASE_URL.startswith("sqlite"):
+        db.execute(text(f"SET LOCAL app.current_tenant_id = :tenant_id"), {"tenant_id": tenant_id})
+
+    # Fetch evidence logs to determine node statuses
+    if DATABASE_URL.startswith("sqlite"):
+        evidences = db.query(DBComplianceEvidence).filter(DBComplianceEvidence.tenant_id == tenant_id).all()
+    else:
+        evidences = db.query(DBComplianceEvidence).all()
+
+    has_guardrail = any(e.event_type == "guardrail_violation" for e in evidences)
+    has_agt = any(e.event_type == "agent_action_intercepted" for e in evidences)
+
+    nodes = [
+        TopologyNode(
+            id="user", 
+            label="User Browser", 
+            type="endpoint", 
+            status="danger" if has_guardrail else "safe",
+            details=f"LAN User Session (Role: {principal['roles'][0]})"
+        ),
+        TopologyNode(
+            id="dashboard", 
+            label="Dashboard Console", 
+            type="app", 
+            status="safe",
+            details="React UI Console (NodePort: 30082)"
+        ),
+        TopologyNode(
+            id="orchestrator", 
+            label="Agent Orchestrator", 
+            type="app", 
+            status="danger" if has_agt else "safe",
+            details="LangGraph Orchestration Pod (Port 8001)"
+        ),
+        TopologyNode(
+            id="governance", 
+            label="Governance Engine", 
+            type="app", 
+            status="safe",
+            details="FastAPI Auditing Pod (Port 8000)"
+        ),
+        TopologyNode(
+            id="postgres", 
+            label="PostgreSQL Database", 
+            type="database", 
+            status="safe",
+            details="Audits & Checkpoints Storage (Port 5432)"
+        ),
+        TopologyNode(
+            id="qdrant", 
+            label="Qdrant Vector DB", 
+            type="database", 
+            status="safe",
+            details="Knowledge Vectors Storage (Port 6333)"
+        ),
+        TopologyNode(
+            id="litellm", 
+            label="LiteLLM Gateway", 
+            type="runtime", 
+            status="safe",
+            details="Model Gateway Router (Port 4000)"
+        ),
+        TopologyNode(
+            id="ollama", 
+            label="External Ollama Node", 
+            type="runtime", 
+            status="safe",
+            details="LAN Model Runner Machine (Port 11434)"
+        )
+    ]
+
+    links = [
+        TopologyLink(source="user", target="dashboard", label="HTTPS"),
+        TopologyLink(source="dashboard", target="orchestrator", label="REST API"),
+        TopologyLink(source="orchestrator", target="postgres", label="SQL"),
+        TopologyLink(source="orchestrator", target="governance", label="GRC webhook"),
+        TopologyLink(source="governance", target="postgres", label="SQL"),
+        TopologyLink(source="orchestrator", target="qdrant", label="gRPC"),
+        TopologyLink(source="orchestrator", target="litellm", label="REST API"),
+        TopologyLink(source="litellm", target="ollama", label="External bridge")
+    ]
+
+    return TopologyResponse(nodes=nodes, links=links)
+
