@@ -31,7 +31,15 @@ enterprise-ai-control-plane/
 ## ⚙️ Configuration & Environment Settings
 
 All deployment parameters are controlled centrally from a single environment file at the root:
-*   **`.env`**: Edit this file to configure the Kubernetes namespace, container registry path, image tag, and datastore credentials.
+*   **`.env`**: Edit this file to configure:
+    *   **Kubernetes & Registry**: Namespace, registry URL, and image tag.
+    *   **Datastores**: Postgres, Redis, and MinIO credentials.
+    *   **External AI Services**: Ollama host IP and model name.
+    *   **Security & Gateways**: Keycloak JWKS endpoint (JWT verification), NeMo Guardrails URL, and Qdrant collection mappings.
+    *   **Observability**: OpenTelemetry OTLP endpoint and Langfuse credentials.
+
+*Note: For local development, leaving Keycloak, NeMo, and MinIO environment variables blank will automatically fall back to secure, simulated local rules (header-based auth, local pattern guardrails, and DB-only evidence storage).*
+
 
 ---
 
