@@ -82,6 +82,15 @@ class DBAgentCheckpoint(Base):
 
     thread = relationship("DBAgentThread", back_populates="checkpoints")
 
+class DBComplianceRule(Base):
+    __tablename__ = "compliance_rules"
+
+    rule_id = Column(String(36), primary_key=True)
+    pattern = Column(String(255), nullable=False)
+    is_active = Column(Integer, default=1) # 1 = active, 0 = inactive
+    control_id = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # Auto-create tables on startup
 Base.metadata.create_all(bind=engine)
 
@@ -109,12 +118,14 @@ class AgentState(TypedDict):
     pending_action: Optional[Dict[str, Any]]
     action_approved: Optional[bool]
 
-# --- Node 1: Guardrail Check Node (NeMo Guardrails or local fallback) ---
+# --- Node 1: Guardrail Check Node (NeMo Guardrails or database rules engine) ---
 def guardrail_node(state: AgentState) -> AgentState:
     user_input = state["input"]
+    tenant_id = state["tenant_id"]
     state["steps"] = list(state.get("steps", [])) + ["guardrail_check"]
     is_safe = True
     violation_reason = ""
+    control_violated = "SOC2-CC-6.1"
 
     # ── Try NeMo Guardrails first (real deployed service) ──────────────────
     if NEMO_GUARDRAILS_URL:
@@ -138,20 +149,53 @@ def guardrail_node(state: AgentState) -> AgentState:
                         is_safe = False
                         violation_reason = nemo_reply
         except Exception as e:
-            print(f"[Guardrail] NeMo unreachable ({e}). Falling back to local pattern matching.")
+            print(f"[Guardrail] NeMo unreachable ({e}). Falling back to database rules engine.")
 
-    # ── Local pattern fallback (when NeMo is not deployed) ─────────────────
+    # ── Database Rules Engine ──────────────────────────────────────────────
     if is_safe:
+        blocked_patterns = []
+        db_session = SessionLocal()
+        try:
+            if not DATABASE_URL.startswith("sqlite"):
+                schema_name = f"tenant_{tenant_id.replace('-', '_')}"
+                db_session.execute(text(f"SET search_path TO {schema_name}, public;"))
+            
+            # Simple check to see if the table exists
+            table_exists = True
+            if not DATABASE_URL.startswith("sqlite"):
+                table_exists = db_session.execute(text("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_schema = :schema AND table_name = 'compliance_rules'
+                    )
+                """), {"schema": schema_name}).scalar()
+
+            if table_exists:
+                rules = db_session.execute(text("SELECT pattern, control_id FROM compliance_rules WHERE is_active = TRUE")).fetchall()
+                blocked_patterns = [(r[0], r[1]) for r in rules]
+        except Exception as e:
+            print(f"[Guardrail] DB lookup failed ({e}). Using default static patterns.")
+        finally:
+            db_session.close()
+
+        # Fallback default rules if DB is empty/fails
+        if not blocked_patterns:
+            blocked_patterns = [
+                ("select * from", "SOC2-CC-6.1"),
+                ("drop table", "SOC2-CC-6.1"),
+                ("admin bypass", "SOC2-CC-6.1"),
+                ("ignore previous instructions", "EU-AI-Act-Art-9"),
+                ("disregard your", "EU-AI-Act-Art-9"),
+                ("repeat after me", "EU-AI-Act-Art-9"),
+                ("; rm -rf", "GDPR-Art-32")
+            ]
+
         lower = user_input.lower()
-        blocked_patterns = [
-            "select * from", "drop table", "admin bypass",
-            "ignore previous instructions", "disregard your",
-            "repeat after me", "; rm -rf"
-        ]
-        for pattern in blocked_patterns:
+        for pattern, control_id in blocked_patterns:
             if pattern in lower:
                 is_safe = False
                 violation_reason = f"Policy violation: Input matches blocked pattern '{pattern}'."
+                control_violated = control_id
                 break
 
     if not is_safe:
@@ -164,7 +208,7 @@ def guardrail_node(state: AgentState) -> AgentState:
                     f"{GOV_URL}/api/v1/evidence",
                     headers={"X-Tenant-ID": state["tenant_id"], "X-User-Role": "system-workload"},
                     json={
-                        "control_id": "SOC2-CC-6.1",
+                        "control_id": control_violated,
                         "source_component": "agent-orchestrator",
                         "event_type": "guardrail_violation",
                         "severity": "high",
@@ -561,6 +605,8 @@ def get_principal(
 def get_db(principal: Dict[str, Any] = Depends(get_principal)):
     db = SessionLocal()
     tenant_id = principal.get("tenant_id", "default")
+    
+    # 1. PostgreSQL Schema Dynamic Setup
     if not DATABASE_URL.startswith("sqlite") and tenant_id:
         schema_name = f"tenant_{tenant_id.replace('-', '_')}"
         try:
@@ -584,10 +630,47 @@ def get_db(principal: Dict[str, Any] = Depends(get_principal)):
                     state_data JSON NOT NULL
                 );
             """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS compliance_rules (
+                    rule_id VARCHAR(36) PRIMARY KEY,
+                    pattern VARCHAR(255) NOT NULL,
+                    is_active BOOLEAN DEFAULT TRUE,
+                    control_id VARCHAR(100) NOT NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT timezone('utc'::text, now())
+                );
+            """))
             db.commit()
         except Exception as e:
             db.rollback()
             print(f"[Database] Error setting up schema/tables: {e}")
+
+    # 2. Database-agnostic Seeding (runs for SQLite or newly created schema)
+    try:
+        rules_count = db.execute(text("SELECT COUNT(*) FROM compliance_rules")).scalar()
+        if rules_count == 0:
+            default_rules = [
+                ("select * from", "SOC2-CC-6.1"),
+                ("drop table", "SOC2-CC-6.1"),
+                ("admin bypass", "SOC2-CC-6.1"),
+                ("ignore previous instructions", "EU-AI-Act-Art-9"),
+                ("disregard your", "EU-AI-Act-Art-9"),
+                ("repeat after me", "EU-AI-Act-Art-9"),
+                ("; rm -rf", "GDPR-Art-32")
+            ]
+            for pattern, ctrl_id in default_rules:
+                db.execute(text("""
+                    INSERT INTO compliance_rules (rule_id, pattern, is_active, control_id)
+                    VALUES (:id, :pattern, 1, :ctrl)
+                """), {
+                    "id": str(uuid.uuid4()),
+                    "pattern": pattern,
+                    "ctrl": ctrl_id
+                })
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[Database] Seeding default rules failed: {e}")
+
     try:
         yield db
     finally:
@@ -1041,6 +1124,30 @@ def get_thread_state(thread_id: str, principal: Dict[str, Any] = Depends(get_pri
         "history": history
     }
 
+async def log_model_discovery(tenant_id: str, model_name: str):
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{GOV_URL}/api/v1/evidence",
+                headers={"X-Tenant-ID": tenant_id, "X-User-Role": "system-workload"},
+                json={
+                    "control_id": "SOC2-CC-6.1",
+                    "source_component": "agent-orchestrator-proxy",
+                    "event_type": "asset_discovered",
+                    "severity": "info",
+                    "payload": {
+                        "asset_id": f"ast_model_{model_name.replace('.', '_').replace('-', '_')}",
+                        "name": f"LLM Model: {model_name}",
+                        "type": "llm_model_runtime",
+                        "location": f"LiteLLM Route (Model: {model_name})",
+                        "status": "active"
+                    }
+                },
+                timeout=2.0
+            )
+    except Exception as e:
+        print(f"[Warning] Failed to log model discovery: {e}")
+
 @app.post("/v1/chat/completions")
 async def chat_completions(
     req: ChatCompletionRequest,
@@ -1075,7 +1182,10 @@ async def chat_completions(
     # We call the guardrail node directly
     state = guardrail_node(state)
     
-    if not state["is_safe"]:
+    if state["is_safe"]:
+        # Log discovered asset dynamically in the background
+        asyncio.create_task(log_model_discovery(tenant_id, req.model))
+    else:
         # Blocked by guardrail
         refusal = state["output"]
         if req.stream:
@@ -1441,3 +1551,46 @@ async def chat_completions(
 
         return StreamingResponse(sse_proxy_stream(), media_type="text/event-stream")
 
+# --- CRUD Compliance Rules API ---
+class RuleCreate(BaseModel):
+    pattern: str
+    control_id: str = "SOC2-CC-6.1"
+
+@app.get("/api/v1/rules")
+def get_rules(principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    tenant_id = principal["tenant_id"]
+    res = db.execute(text("SELECT rule_id, pattern, is_active, control_id FROM compliance_rules")).fetchall()
+    return [
+        {"rule_id": r[0], "pattern": r[1], "is_active": bool(r[2]), "control_id": r[3]}
+        for r in res
+    ]
+
+@app.post("/api/v1/rules", status_code=201)
+def create_rule(req: RuleCreate, principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    rule_id = str(uuid.uuid4())
+    db.execute(text("""
+        INSERT INTO compliance_rules (rule_id, pattern, is_active, control_id)
+        VALUES (:id, :pattern, 1, :ctrl)
+    """), {
+        "id": rule_id,
+        "pattern": req.pattern,
+        "ctrl": req.control_id
+    })
+    db.commit()
+    return {"rule_id": rule_id, "pattern": req.pattern, "is_active": True, "control_id": req.control_id}
+
+@app.delete("/api/v1/rules/{rule_id}")
+def delete_rule(rule_id: str, principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    db.execute(text("DELETE FROM compliance_rules WHERE rule_id = :id"), {"id": rule_id})
+    db.commit()
+    return {"status": "deleted", "rule_id": rule_id}
+
+@app.put("/api/v1/rules/{rule_id}/toggle")
+def toggle_rule(rule_id: str, principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    row = db.execute(text("SELECT is_active FROM compliance_rules WHERE rule_id = :id"), {"id": rule_id}).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    new_status = 0 if row[0] else 1
+    db.execute(text("UPDATE compliance_rules SET is_active = :status WHERE rule_id = :id"), {"status": new_status, "id": rule_id})
+    db.commit()
+    return {"rule_id": rule_id, "is_active": bool(new_status)}

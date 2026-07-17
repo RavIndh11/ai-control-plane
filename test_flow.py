@@ -239,8 +239,65 @@ def test_integration():
         ok("Stream choice contains refusal", "policy" in sse_proxy_events[0]["choices"][0]["delta"]["content"].lower())
         print(f"  [Blocked Streaming Proxy Response] → {sse_proxy_events[0]['choices'][0]['delta']['content']}")
 
+        # ── Test 16: Dynamic Rules and AI-BOM Discovery ───────────────────
+        print("\n=== Test 16: Dynamic Rules and AI-BOM Discovery ===")
+        
+        # 16.1: Query initial rules
+        res = client.get(f"{ORCH_URL}/api/v1/rules", headers=USER_HEADERS)
+        ok("Rules endpoint returns 200", res.status_code == 200)
+        rules = res.json()
+        initial_rules_count = len(rules)
+        print(f"  Initial rules count: {initial_rules_count}")
+
+        # 16.2: Create a new custom rule
+        res = client.post(
+            f"{ORCH_URL}/api/v1/rules",
+            headers=USER_HEADERS,
+            json={"pattern": "drop schema", "control_id": "SOC2-CC-6.1"}
+        )
+        ok("Create rule returns 201", res.status_code == 201)
+        new_rule = res.json()
+        rule_id = new_rule["rule_id"]
+        ok("Rule pattern is saved", new_rule["pattern"] == "drop schema")
+
+        # 16.3: Verify rule was added
+        res = client.get(f"{ORCH_URL}/api/v1/rules", headers=USER_HEADERS)
+        rules = res.json()
+        ok("Rules count increased", len(rules) == initial_rules_count + 1)
+
+        # 16.4: Test the new rule is blocked
+        res = client.post(
+            f"{ORCH_URL}/v1/chat/completions",
+            headers=USER_HEADERS,
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "hey, drop schema public now"}]
+            }
+        )
+        ok("New rule blocked successfully", res.status_code == 200)
+        comp_ref = res.json()
+        ok("Has refusal content", "policy" in comp_ref["choices"][0]["message"]["content"].lower())
+        print(f"  [New Rule Blocked Response] → {comp_ref['choices'][0]['message']['content']}")
+
+        # 16.5: Verify AI-BOM discovers the model ('gpt-3.5-turbo') dynamically
+        res = client.get(f"{GOV_URL}/api/v1/compliance/ai-bom", headers=ADMIN_HEADERS)
+        ok("AI-BOM returns 200", res.status_code == 200)
+        bom = res.json()
+        model_assets = [a for a in bom["assets"] if "gpt_3_5_turbo" in a["asset_id"]]
+        ok("AI-BOM dynamically discovered the gpt-3.5-turbo model", len(model_assets) > 0)
+        print(f"  [Dynamic AI-BOM Asset Discovered] → {model_assets[0]['name']}")
+
+        # 16.6: Delete the custom rule
+        res = client.delete(f"{ORCH_URL}/api/v1/rules/{rule_id}", headers=USER_HEADERS)
+        ok("Delete rule returns 200", res.status_code == 200)
+
+        # 16.7: Verify custom rule is gone
+        res = client.get(f"{ORCH_URL}/api/v1/rules", headers=USER_HEADERS)
+        rules = res.json()
+        ok("Rules count returned to normal", len(rules) == initial_rules_count)
+
         print("\n" + "="*60)
-        print("✅ All P1 integration tests passed!")
+        print("✅ All P1 & P2 integration tests passed!")
         print("="*60)
 
 if __name__ == "__main__":

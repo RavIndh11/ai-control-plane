@@ -488,6 +488,23 @@ def get_ai_bom(principal: Dict[str, Any] = Depends(get_principal), db: Session =
     # Track risk factors
     guardrail_violations = [e for e in evidences if e.event_type == "guardrail_violation"]
     agt_violations = [e for e in evidences if e.event_type == "agent_action_intercepted"]
+    discovered_assets_ev = [e for e in evidences if e.event_type == "asset_discovered"]
+
+    # Deduplicate discovered assets dynamically
+    discovered_assets = {}
+    for ev in discovered_assets_ev:
+        payload = ev.payload
+        ast_id = payload.get("asset_id")
+        if ast_id and ast_id not in discovered_assets:
+            discovered_assets[ast_id] = AIBOMAsset(
+                asset_id=ast_id,
+                name=payload.get("name", "Unknown LLM Model"),
+                type=payload.get("type", "llm_model_runtime"),
+                location=payload.get("location", "Cloud Route"),
+                status=payload.get("status", "active"),
+                risk_level="info",
+                risk_factors=[]
+            )
 
     assets = []
     high_risk_count = 0
@@ -559,6 +576,9 @@ def get_ai_bom(principal: Dict[str, Any] = Depends(get_principal), db: Session =
         risk_level="info",
         risk_factors=[]
     ))
+
+    # 6. Append dynamically discovered LLM models
+    assets.extend(discovered_assets.values())
 
     return AIBOMResponse(
         generated_at=datetime.utcnow(),
