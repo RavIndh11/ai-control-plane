@@ -479,7 +479,33 @@ workflow.add_conditional_edges(
     }
 )
 workflow.add_edge("generation", END)
-compiled_graph = workflow.compile()
+
+# Fallback in-memory compilation for startup
+from langgraph.checkpoint.memory import MemorySaver
+compiled_graph = workflow.compile(checkpointer=MemorySaver())
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global compiled_graph
+    if DATABASE_URL.startswith("sqlite"):
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        db_path = DATABASE_URL.replace("sqlite:///", "")
+        with SqliteSaver.from_conn_string(db_path) as checkpointer:
+            checkpointer.setup()
+            compiled_graph = workflow.compile(checkpointer=checkpointer)
+            print(f"[Lifespan] Compiled LangGraph with SqliteSaver.")
+            yield
+    else:
+        from langgraph.checkpoint.postgres import PostgresSaver
+        with PostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
+            checkpointer.setup()
+            compiled_graph = workflow.compile(checkpointer=checkpointer)
+            print(f"[Lifespan] Compiled LangGraph with PostgresSaver.")
+            yield
+
+app.router.lifespan_context = lifespan
 
 # --- Pydantic API Models ---
 class ThreadCreate(BaseModel):
@@ -851,7 +877,8 @@ def run_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any] = Depen
         }
     
     # Execute LangGraph workflow synchronously (runs until END or hits interrupt)
-    final_output_state = compiled_graph.invoke(state_to_run)
+    config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
+    final_output_state = compiled_graph.invoke(state_to_run, config=config)
     
     # Determine execution status based on whether a pending action is still unresolved
     status = "completed"
@@ -966,7 +993,8 @@ async def stream_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any
         # Run guardrail + agent + shield synchronously in a thread pool to not block
         loop = asyncio.get_event_loop()
         def _run_graph():
-            return compiled_graph.invoke(state_to_run)
+            config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
+            return compiled_graph.invoke(state_to_run, config=config)
 
         try:
             intermediate_state = await loop.run_in_executor(None, _run_graph)

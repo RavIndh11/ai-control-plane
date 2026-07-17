@@ -1,5 +1,7 @@
 langchain
 langgraph
+langgraph-checkpoint-sqlite
+langgraph-checkpoint-postgres
 fastapi
 uvicorn
 pydantic
@@ -11,3 +13,5 @@ qdrant-client
 opentelemetry-sdk
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-fastapi
+psycopg-binary
+
