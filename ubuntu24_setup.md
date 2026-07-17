@@ -134,3 +134,50 @@ sudo kubeadm join <MASTER-NODE-IP>:6443 --token <token> \
 ```
 
 Verify that all 3 nodes are online by running `kubectl get nodes` on the master node.
+
+---
+
+## 🛠️ Step 7: Troubleshooting & VM Stabilization (Ubuntu 24.04 Specifics)
+
+If you are experiencing node instability, join failures, or crashing pods on Ubuntu 24.04 (Noble Numbat), check the following common issues:
+
+### 1. AppArmor Unprivileged Namespace Restriction
+Ubuntu 24.04 introduces a security feature that restricts unprivileged user namespaces, which frequently crashes `containerd`, `runc`, or nested container builders.
+*   **Symptom**: Pod sandbox creation fails with `permission denied` or `runc did not terminate gracefully`.
+*   **Fix** (Run on all nodes):
+    ```bash
+    # Temporary fix
+    sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+    
+    # Permanent fix
+    echo "kernel.apparmor_restrict_unprivileged_userns=0" | sudo tee /etc/sysctl.d/60-apparmor-namespace.conf
+    sudo sysctl --system
+    ```
+
+### 2. DNS Resolution Loop (CoreDNS Crash)
+Ubuntu 24.04 uses `systemd-resolved` which points `/etc/resolv.conf` to `127.0.0.53`. CoreDNS inherits this and creates an infinite forwarding loop, crashing CoreDNS.
+*   **Symptom**: `kubectl get pods -n kube-system` shows `coredns` pods stuck in `CrashLoopBackOff`.
+*   **Fix**: Update the kubelet configuration to use the upstream DNS servers (e.g. `8.8.8.8`) instead of the loopback.
+    ```bash
+    # Open kubelet systemd config
+    sudo mkdir -p /etc/default
+    echo 'KUBELET_EXTRA_ARGS="--resolv-conf=/run/systemd/resolve/resolv.conf"' | sudo tee /etc/default/kubelet
+    sudo systemctl restart kubelet
+    ```
+
+### 3. Persistent Kernel Modules
+On some Ubuntu 24.04 setups, the `overlay` and `br_netfilter` modules do not load automatically after a reboot.
+*   **Fix**: Double check that `/etc/modules` includes them:
+    ```bash
+    echo -e "overlay\nbr_netfilter" | sudo tee -a /etc/modules
+    ```
+
+### 4. Containerd AppArmor Profiles
+If containerd cannot start workloads, AppArmor might be blocking it.
+*   **Fix**: Install the AppArmor parser tools and reload the profiles:
+    ```bash
+    sudo apt-get install -y apparmor-utils
+    sudo systemctl restart apparmor
+    sudo systemctl restart containerd
+    ```
+
