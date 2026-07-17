@@ -62,6 +62,8 @@ class AgentState(TypedDict):
     steps: List[str]
     is_safe: bool
     tenant_id: str
+    user_id: str
+    thread_id: str
     
     # Microsoft AGT/Governance-inspired fields:
     pending_action: Optional[Dict[str, Any]]
@@ -70,14 +72,11 @@ class AgentState(TypedDict):
 # --- Node 1: Guardrail Check Node ---
 def guardrail_node(state: AgentState) -> AgentState:
     user_input = state["input"].lower()
-    steps = list(state.get("steps", []))
-    steps.append("guardrail_check")
+    state["steps"] = list(state.get("steps", [])) + ["guardrail_check"]
     
-    is_safe = True
-    output = ""
     if "select * from" in user_input or "drop table" in user_input or "admin bypass" in user_input:
-        is_safe = False
-        output = "Policy violation detected: Input contains restricted database command patterns."
+        state["is_safe"] = False
+        state["output"] = "Policy violation detected: Input contains restricted database command patterns."
         
         try:
             with httpx.Client() as client:
@@ -102,64 +101,44 @@ def guardrail_node(state: AgentState) -> AgentState:
         except Exception as e:
             print(f"[Warning] Failed to push compliance evidence: {e}")
             
-    return {
-        "input": state["input"],
-        "output": output,
-        "steps": steps,
-        "is_safe": is_safe,
-        "tenant_id": state["tenant_id"],
-        "pending_action": state.get("pending_action"),
-        "action_approved": state.get("action_approved")
-    }
+    return state
 
 # --- Node 2: Agent Reasoning Node ---
 def agent_node(state: AgentState) -> AgentState:
-    steps = list(state.get("steps", []))
-    steps.append("agent_reasoning")
+    state["steps"] = list(state.get("steps", [])) + ["agent_reasoning"]
     
     if not state["is_safe"]:
         return state
         
     user_input = state["input"].lower()
-    pending_action = None
     
     # Simulate agent deciding to call a high-risk tool (Microsoft AGT boundary)
     if "delete" in user_input or "run command" in user_input or "drop" in user_input:
-        pending_action = {
+        state["pending_action"] = {
             "tool": "terminal_executor",
             "arguments": {
                 "command": state["input"]
             }
         }
-        print(f"[AGT] Agent requests high-risk tool call execution: {pending_action}")
+        print(f"[AGT] Agent requests high-risk tool call execution: {state['pending_action']}")
 
-    return {
-        "input": state["input"],
-        "output": state.get("output", ""),
-        "steps": steps,
-        "is_safe": state["is_safe"],
-        "tenant_id": state["tenant_id"],
-        "pending_action": pending_action,
-        "action_approved": state.get("action_approved")
-    }
+    return state
 
 # --- Node 3: Microsoft AGT Governance Shield Node ---
 def governance_shield_node(state: AgentState) -> AgentState:
-    steps = list(state.get("steps", []))
-    steps.append("governance_shield")
+    state["steps"] = list(state.get("steps", [])) + ["governance_shield"]
     
     if not state["is_safe"]:
         return state
         
     pending_action = state.get("pending_action")
     action_approved = state.get("action_approved")
-    output = state.get("output", "")
     
     if pending_action:
         # Check if user has approved/rejected yet
         if action_approved is None:
             # First pass: trigger interrupt to pause graph execution
-            steps.append("governance_shield_interrupt")
+            state["steps"].append("governance_shield_interrupt")
             print("[AGT] Governance Shield triggered. Pausing graph for human-in-the-loop (HITL) approval.")
             
             # Send alert log as evidence of policy enforcement
@@ -189,32 +168,23 @@ def governance_shield_node(state: AgentState) -> AgentState:
                 
         elif action_approved is False:
             # User rejected the action
-            output = f"Action blocked: Execution of tool '{pending_action['tool']}' rejected by user/admin."
-            pending_action = None # Clear action
-            steps.append("governance_shield_rejected")
+            state["output"] = f"Action blocked: Execution of tool '{pending_action['tool']}' rejected by user/admin."
+            state["pending_action"] = None # Clear action
+            state["steps"].append("governance_shield_rejected")
             print("[AGT] Tool execution rejected by administrator.")
             
         elif action_approved is True:
             # User approved the action -> Execute the tool safely
-            output = f"Success: Action '{pending_action['tool']}' approved and executed."
-            pending_action = None # Clear action
-            steps.append("governance_shield_executed")
+            state["output"] = f"Success: Action '{pending_action['tool']}' approved and executed."
+            state["pending_action"] = None # Clear action
+            state["steps"].append("governance_shield_executed")
             print("[AGT] Tool execution approved. Executing tool.")
             
-    return {
-        "input": state["input"],
-        "output": output,
-        "steps": steps,
-        "is_safe": state["is_safe"],
-        "tenant_id": state["tenant_id"],
-        "pending_action": pending_action,
-        "action_approved": action_approved
-    }
+    return state
 
 # --- Node 4: Generation Node ---
 def generation_node(state: AgentState) -> AgentState:
-    steps = list(state.get("steps", []))
-    steps.append("generation")
+    state["steps"] = list(state.get("steps", [])) + ["generation"]
     
     if not state["is_safe"] or "governance_shield_interrupt" in state["steps"]:
         return state
@@ -233,7 +203,12 @@ def generation_node(state: AgentState) -> AgentState:
                 json={
                     "model": LLM_MODEL,
                     "messages": [{"role": "user", "content": user_input}],
-                    "temperature": 0.7
+                    "temperature": 0.7,
+                    "user": state.get("user_id", "user_default"),
+                    "metadata": {
+                        "tenant_id": state.get("tenant_id", "tenant_default"),
+                        "thread_id": state.get("thread_id", "thread_default")
+                    }
                 },
                 timeout=5.0
             )
@@ -245,15 +220,8 @@ def generation_node(state: AgentState) -> AgentState:
         print(f"[Warning] LLM Gateway unreachable ({e}). Using mock local generation node.")
         output = f"Processed query '{user_input}' successfully within tenant context."
     
-    return {
-        "input": state["input"],
-        "output": output,
-        "steps": steps,
-        "is_safe": state["is_safe"],
-        "tenant_id": state["tenant_id"],
-        "pending_action": state.get("pending_action"),
-        "action_approved": state.get("action_approved")
-    }
+    state["output"] = output
+    return state
 
 # --- Graph Routing Logic ---
 def route_after_guardrail(state: AgentState) -> str:
@@ -475,6 +443,8 @@ def run_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any] = Depen
             "steps": previous_state.get("steps", []),
             "is_safe": previous_state.get("is_safe", True),
             "tenant_id": tenant_id,
+            "user_id": principal["id"],
+            "thread_id": thread_id,
             "pending_action": previous_state["pending_action"],
             "action_approved": req.approve_action
         }
@@ -489,6 +459,8 @@ def run_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any] = Depen
             "steps": [],
             "is_safe": True,
             "tenant_id": tenant_id,
+            "user_id": principal["id"],
+            "thread_id": thread_id,
             "pending_action": None,
             "action_approved": None
         }

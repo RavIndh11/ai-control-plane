@@ -40,6 +40,14 @@ extraEnv:
     value: "redis-secure-pass"
   - name: LITELLM_MASTER_KEY
     value: "sk-litellm-master-secure-pass"
+  - name: LITELLM_LOGGING
+    value: '["langfuse"]'
+  - name: LANGFUSE_PUBLIC_KEY
+    value: "pk-lf-master-secure-public-key"
+  - name: LANGFUSE_SECRET_KEY
+    value: "sk-lf-master-secure-secret-key"
+  - name: LANGFUSE_HOST
+    value: "http://langfuse.control-plane.svc.cluster.local:3000"
 
 service:
   type: ClusterIP
