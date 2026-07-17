@@ -2,6 +2,8 @@ import httpx
 import time
 import sys
 import json
+import uuid
+
 
 GOV_URL = "http://localhost:8000"
 ORCH_URL = "http://localhost:8001"
@@ -295,6 +297,76 @@ def test_integration():
         res = client.get(f"{ORCH_URL}/api/v1/rules", headers=USER_HEADERS)
         rules = res.json()
         ok("Rules count returned to normal", len(rules) == initial_rules_count)
+
+        # ── Test 17: Unified HITL Approval Queue & Endpoint Discovery ────
+        print("\n=== Test 17: Unified HITL Approval Queue & Endpoint Discovery ===")
+        
+        # 17.1: Start a completions request that triggers a mock high-risk tool call
+        import threading
+        import time
+        
+        thread_id_hitl = f"th_hitl_{uuid.uuid4().hex[:8]}"
+        proxy_headers = {**USER_HEADERS, "X-Thread-ID": thread_id_hitl}
+        
+        completions_result = {}
+        def _run_completion():
+            try:
+                # We use a separate client to avoid session locking issues
+                with httpx.Client(timeout=30.0) as sync_client:
+                    res_comp = sync_client.post(
+                        f"{ORCH_URL}/v1/chat/completions",
+                        headers=proxy_headers,
+                        json={
+                            "model": "gpt-3.5-turbo",
+                            "messages": [{"role": "user", "content": "mock_tool_call: terminal command to rm logs"}]
+                        }
+                    )
+                    completions_result["status"] = res_comp.status_code
+                    completions_result["json"] = res_comp.json()
+            except Exception as e:
+                completions_result["error"] = str(e)
+                
+        # Start thread
+        t = threading.Thread(target=_run_completion)
+        t.start()
+        
+        # Sleep for a bit to let it hit the intercept and enter the polling loop
+        time.sleep(2.0)
+        
+        # 17.2: Query the pending approval queue
+        res_queue = client.get(f"{ORCH_URL}/api/v1/runs/pending", headers=ADMIN_HEADERS)
+        ok("Pending queue returns 200", res_queue.status_code == 200)
+        pending_list = res_queue.json()
+        ok("Pending queue contains our thread", any(p["thread_id"] == thread_id_hitl for p in pending_list))
+        print(f"  [Pending Queue Check] -> Discovered {len(pending_list)} pending approval runs.")
+        
+        # 17.3: Submit Approve action via the new API
+        res_approve = client.post(
+            f"{ORCH_URL}/api/v1/threads/{thread_id_hitl}/approve",
+            headers=ADMIN_HEADERS,
+            json={"approve": True}
+        )
+        ok("Approval api returns 200", res_approve.status_code == 200)
+        print("  [Approve API Submit] -> Sent approve decision.")
+        
+        # Wait for completion thread to join
+        t.join(timeout=10.0)
+        
+        ok("Completions request finished", not t.is_alive())
+        ok("Completions returned 200", completions_result.get("status") == 200, f"got {completions_result}")
+        print(f"  [Completions Response] -> Finished with status 200: {completions_result['json']['choices'][0]['message'].get('tool_calls') is not None}")
+
+        # 17.4: Test endpoint discovery daemon in one-shot mode
+        import subprocess
+        daemon_path = "platform/discovery/local_daemon.py"
+        proc = subprocess.run([
+            sys.executable, daemon_path,
+            "--gov-url", GOV_URL,
+            "--tenant", "tenant-acme",
+            "--one-shot"
+        ], capture_output=True, text=True)
+        ok("Discovery daemon executed successfully", proc.returncode == 0, f"stdout: {proc.stdout}\nstderr: {proc.stderr}")
+        print("  [Discovery Daemon Check] -> Script executed in one-shot mode successfully.")
 
         print("\n" + "="*60)
         print("✅ All P1 & P2 integration tests passed!")

@@ -1239,20 +1239,44 @@ async def chat_completions(
                 response_json = res.json()
         except Exception as e:
             print(f"[Proxy] LLM Gateway unreachable ({e}). Using local mock chat completion fallback.")
-            response_json = {
-                "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
-                "object": "chat.completion",
-                "created": int(datetime.utcnow().timestamp()),
-                "model": req.model,
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": "assistant",
-                        "content": f"Processed query '{user_content}' successfully within tenant context (mock proxy completions mode)."
-                    },
-                    "finish_reason": "stop"
-                }]
-            }
+            if "mock_tool_call" in user_content.lower():
+                response_json = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                    "object": "chat.completion",
+                    "created": int(datetime.utcnow().timestamp()),
+                    "model": req.model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [{
+                                "id": "call_mock123",
+                                "type": "function",
+                                "function": {
+                                    "name": "terminal_executor",
+                                    "arguments": '{"command": "rm -rf /backups"}'
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls"
+                    }]
+                }
+            else:
+                response_json = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                    "object": "chat.completion",
+                    "created": int(datetime.utcnow().timestamp()),
+                    "model": req.model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": f"Processed query '{user_content}' successfully within tenant context (mock proxy completions mode)."
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }
         choices = response_json.get("choices", [])
         if not choices:
             return response_json
@@ -1594,3 +1618,66 @@ def toggle_rule(rule_id: str, principal: Dict[str, Any] = Depends(get_principal)
     db.execute(text("UPDATE compliance_rules SET is_active = :status WHERE rule_id = :id"), {"status": new_status, "id": rule_id})
     db.commit()
     return {"rule_id": rule_id, "is_active": bool(new_status)}
+
+# --- Unified HITL Approval Queue API ---
+class ApproveActionRequest(BaseModel):
+    approve: bool
+
+@app.get("/api/v1/runs/pending")
+def get_pending_runs(principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    # Query checkpoints
+    checkpoints = db.query(DBAgentCheckpoint).order_by(DBAgentCheckpoint.timestamp.desc()).all()
+    pending = []
+    seen_threads = set()
+    for cp in checkpoints:
+        if cp.thread_id in seen_threads:
+            continue
+        seen_threads.add(cp.thread_id)
+        
+        state = cp.state_data
+        if state.get("pending_action") and state.get("action_approved") is None:
+            pending.append({
+                "thread_id": cp.thread_id,
+                "checkpoint_id": cp.checkpoint_id,
+                "timestamp": cp.timestamp.isoformat(),
+                "step": cp.step,
+                "tenant_id": state.get("tenant_id"),
+                "user_id": state.get("user_id"),
+                "pending_action": state.get("pending_action")
+            })
+    return pending
+
+@app.post("/api/v1/threads/{thread_id}/approve")
+def approve_thread_run(
+    thread_id: str,
+    req: ApproveActionRequest,
+    principal: Dict[str, Any] = Depends(get_principal),
+    db: Session = Depends(get_db)
+):
+    tenant_id = principal["tenant_id"]
+    if not is_authorized(principal, "agent_thread", thread_id, "write", {"tenant_id": tenant_id}):
+        raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot write to this thread")
+
+    # Fetch latest checkpoint
+    checkpoint = db.query(DBAgentCheckpoint).filter(
+        DBAgentCheckpoint.thread_id == thread_id
+    ).order_by(DBAgentCheckpoint.timestamp.desc()).first()
+
+    if not checkpoint:
+        raise HTTPException(status_code=404, detail="No checkpoints found for this thread")
+
+    state = dict(checkpoint.state_data)
+    if not state.get("pending_action") or state.get("action_approved") is not None:
+        raise HTTPException(status_code=400, detail="No pending action to approve/reject on this thread")
+
+    # Update state_data
+    state["action_approved"] = req.approve
+    checkpoint.state_data = state
+    
+    # SQLAlchemy requires flagging JSON modifications for persistence
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(checkpoint, "state_data")
+    
+    db.commit()
+    return {"status": "success", "thread_id": thread_id, "action_approved": req.approve}
+
