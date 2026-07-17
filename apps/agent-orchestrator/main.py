@@ -62,6 +62,10 @@ class AgentState(TypedDict):
     steps: List[str]
     is_safe: bool
     tenant_id: str
+    
+    # Microsoft AGT/Governance-inspired fields:
+    pending_action: Optional[Dict[str, Any]]
+    action_approved: Optional[bool]
 
 # --- Node 1: Guardrail Check Node ---
 def guardrail_node(state: AgentState) -> AgentState:
@@ -103,22 +107,126 @@ def guardrail_node(state: AgentState) -> AgentState:
         "output": output,
         "steps": steps,
         "is_safe": is_safe,
-        "tenant_id": state["tenant_id"]
+        "tenant_id": state["tenant_id"],
+        "pending_action": state.get("pending_action"),
+        "action_approved": state.get("action_approved")
     }
 
-# --- Node 2: Generation Node ---
+# --- Node 2: Agent Reasoning Node ---
+def agent_node(state: AgentState) -> AgentState:
+    steps = list(state.get("steps", []))
+    steps.append("agent_reasoning")
+    
+    if not state["is_safe"]:
+        return state
+        
+    user_input = state["input"].lower()
+    pending_action = None
+    
+    # Simulate agent deciding to call a high-risk tool (Microsoft AGT boundary)
+    if "delete" in user_input or "run command" in user_input or "drop" in user_input:
+        pending_action = {
+            "tool": "terminal_executor",
+            "arguments": {
+                "command": state["input"]
+            }
+        }
+        print(f"[AGT] Agent requests high-risk tool call execution: {pending_action}")
+
+    return {
+        "input": state["input"],
+        "output": state.get("output", ""),
+        "steps": steps,
+        "is_safe": state["is_safe"],
+        "tenant_id": state["tenant_id"],
+        "pending_action": pending_action,
+        "action_approved": state.get("action_approved")
+    }
+
+# --- Node 3: Microsoft AGT Governance Shield Node ---
+def governance_shield_node(state: AgentState) -> AgentState:
+    steps = list(state.get("steps", []))
+    steps.append("governance_shield")
+    
+    if not state["is_safe"]:
+        return state
+        
+    pending_action = state.get("pending_action")
+    action_approved = state.get("action_approved")
+    output = state.get("output", "")
+    
+    if pending_action:
+        # Check if user has approved/rejected yet
+        if action_approved is None:
+            # First pass: trigger interrupt to pause graph execution
+            steps.append("governance_shield_interrupt")
+            print("[AGT] Governance Shield triggered. Pausing graph for human-in-the-loop (HITL) approval.")
+            
+            # Send alert log as evidence of policy enforcement
+            try:
+                with httpx.Client() as client:
+                    client.post(
+                        f"{GOV_URL}/api/v1/evidence",
+                        headers={
+                            "X-Tenant-ID": state["tenant_id"],
+                            "X-User-Role": "system-workload"
+                        },
+                        json={
+                            "control_id": "EU-AI-Act-Art-9",
+                            "source_component": "agent-orchestrator",
+                            "event_type": "agent_action_intercepted",
+                            "severity": "medium",
+                            "payload": {
+                                "requested_tool": pending_action["tool"],
+                                "arguments": pending_action["arguments"],
+                                "message": "High-risk tool call intercepted. Pausing execution for admin approval."
+                            }
+                        },
+                        timeout=2.0
+                    )
+            except Exception as e:
+                print(f"[Warning] Failed to push compliance evidence: {e}")
+                
+        elif action_approved is False:
+            # User rejected the action
+            output = f"Action blocked: Execution of tool '{pending_action['tool']}' rejected by user/admin."
+            pending_action = None # Clear action
+            steps.append("governance_shield_rejected")
+            print("[AGT] Tool execution rejected by administrator.")
+            
+        elif action_approved is True:
+            # User approved the action -> Execute the tool safely
+            output = f"Success: Action '{pending_action['tool']}' approved and executed."
+            pending_action = None # Clear action
+            steps.append("governance_shield_executed")
+            print("[AGT] Tool execution approved. Executing tool.")
+            
+    return {
+        "input": state["input"],
+        "output": output,
+        "steps": steps,
+        "is_safe": state["is_safe"],
+        "tenant_id": state["tenant_id"],
+        "pending_action": pending_action,
+        "action_approved": action_approved
+    }
+
+# --- Node 4: Generation Node ---
 def generation_node(state: AgentState) -> AgentState:
     steps = list(state.get("steps", []))
     steps.append("generation")
     
-    if not state["is_safe"]:
+    if not state["is_safe"] or "governance_shield_interrupt" in state["steps"]:
+        return state
+        
+    # If output was already set by governance shield (execution or rejection), keep it
+    if state.get("output"):
         return state
         
     user_input = state["input"]
     output = ""
     
     try:
-        # Request completion from LLM Gateway (LiteLLM / Ollama)
         with httpx.Client() as client:
             res = client.post(
                 f"{LLM_GATEWAY_URL}/chat/completions",
@@ -142,23 +250,42 @@ def generation_node(state: AgentState) -> AgentState:
         "output": output,
         "steps": steps,
         "is_safe": state["is_safe"],
-        "tenant_id": state["tenant_id"]
+        "tenant_id": state["tenant_id"],
+        "pending_action": state.get("pending_action"),
+        "action_approved": state.get("action_approved")
     }
 
-def routing_logic(state: AgentState) -> str:
+# --- Graph Routing Logic ---
+def route_after_guardrail(state: AgentState) -> str:
     if not state["is_safe"]:
+        return END
+    return "agent_node"
+
+def route_after_shield(state: AgentState) -> str:
+    if "governance_shield_interrupt" in state["steps"]:
         return END
     return "generation"
 
 # --- Build LangGraph Pipeline ---
 workflow = StateGraph(AgentState)
 workflow.add_node("guardrail", guardrail_node)
+workflow.add_node("agent_node", agent_node)
+workflow.add_node("governance_shield", governance_shield_node)
 workflow.add_node("generation", generation_node)
 
 workflow.set_entry_point("guardrail")
 workflow.add_conditional_edges(
     "guardrail",
-    routing_logic,
+    route_after_guardrail,
+    {
+        "agent_node": "agent_node",
+        END: END
+    }
+)
+workflow.add_edge("agent_node", "governance_shield")
+workflow.add_conditional_edges(
+    "governance_shield",
+    route_after_shield,
     {
         "generation": "generation",
         END: END
@@ -173,8 +300,8 @@ class ThreadCreate(BaseModel):
     initial_state: Optional[Dict[str, Any]] = None
 
 class ThreadRun(BaseModel):
-    input: str
-    stream: bool = False
+    input: Optional[str] = None
+    approve_action: Optional[bool] = None # For resuming/resolving HITL actions
 
 # --- Database Session Dependency ---
 def get_db():
@@ -228,7 +355,6 @@ def is_authorized(principal: Dict[str, Any], resource_kind: str, resource_id: st
     except Exception:
         print(f"[Warning] Cerbos PDP unreachable at {CERBOS_URL}. Emulating authorization rules locally.")
     
-    # --- Local Emulation of agent_threads.yaml Policies ---
     roles = principal["roles"]
     tenant_id = principal["tenant_id"]
     res_tenant_id = resource_attr.get("tenant_id")
@@ -258,7 +384,6 @@ def read_root():
 def create_thread(req: ThreadCreate, principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
     tenant_id = principal["tenant_id"]
     
-    # Check Cerbos Authz
     if not is_authorized(principal, "agent_thread", "new", "write", {"tenant_id": tenant_id}):
         raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot write threads for this tenant")
 
@@ -283,7 +408,9 @@ def create_thread(req: ThreadCreate, principal: Dict[str, Any] = Depends(get_pri
         "output": "Session initialized.",
         "steps": [],
         "is_safe": True,
-        "tenant_id": tenant_id
+        "tenant_id": tenant_id,
+        "pending_action": None,
+        "action_approved": None
     }
     
     db_checkpoint = DBAgentCheckpoint(
@@ -321,16 +448,58 @@ def run_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any] = Depen
     if not is_authorized(principal, "agent_thread", thread_id, "write", {"tenant_id": thread.tenant_id}):
         raise HTTPException(status_code=403, detail="Unauthorized: Principal cannot write to this thread")
 
-    initial_state: AgentState = {
-        "input": req.input,
-        "output": "",
-        "steps": [],
-        "is_safe": True,
-        "tenant_id": tenant_id
-    }
+    # Fetch last checkpoint
+    last_checkpoint = db.query(DBAgentCheckpoint).filter(
+        DBAgentCheckpoint.thread_id == thread_id
+    ).order_by(DBAgentCheckpoint.timestamp.desc()).first()
+
+    if not last_checkpoint:
+        raise HTTPException(status_code=500, detail="Checkpoint history missing")
+
+    previous_state = last_checkpoint.state_data
+
+    # --- Resuming from an Interrupted Action ---
+    if previous_state.get("pending_action") and previous_state.get("action_approved") is None:
+        if req.approve_action is None:
+            raise HTTPException(
+                status_code=400,
+                detail="HITL Action Pending. This thread is paused. You must pass 'approve_action': true/false to resume."
+            )
+        
+        print(f"[AGT] Resuming thread from checkpoint. Admin decision: {req.approve_action}")
+        
+        # Load state and update approval decision
+        state_to_run: AgentState = {
+            "input": previous_state["input"],
+            "output": previous_state.get("output", ""),
+            "steps": previous_state.get("steps", []),
+            "is_safe": previous_state.get("is_safe", True),
+            "tenant_id": tenant_id,
+            "pending_action": previous_state["pending_action"],
+            "action_approved": req.approve_action
+        }
+    else:
+        # --- Normal New Query Run ---
+        if not req.input:
+            raise HTTPException(status_code=400, detail="Missing 'input' parameter in request body.")
+            
+        state_to_run: AgentState = {
+            "input": req.input,
+            "output": "",
+            "steps": [],
+            "is_safe": True,
+            "tenant_id": tenant_id,
+            "pending_action": None,
+            "action_approved": None
+        }
     
-    # Execute LangGraph workflow synchronously
-    final_output_state = compiled_graph.invoke(initial_state)
+    # Execute LangGraph workflow synchronously (runs until END or hits interrupt)
+    final_output_state = compiled_graph.invoke(state_to_run)
+    
+    # Determine execution status based on whether a pending action is still unresolved
+    status = "completed"
+    if final_output_state.get("pending_action") is not None:
+        status = "action_required"
     
     # Save Checkpoint
     checkpoint_id = f"cp_{uuid.uuid4().hex[:8]}"
@@ -345,9 +514,11 @@ def run_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any] = Depen
     db.commit()
     
     return {
+        "status": status,
         "output": {
             "response": final_output_state["output"],
-            "steps_executed": final_output_state["steps"]
+            "steps_executed": final_output_state["steps"],
+            "pending_action": final_output_state.get("pending_action")
         },
         "checkpoint_id": checkpoint_id
     }
@@ -384,7 +555,8 @@ def get_thread_state(thread_id: str, principal: Dict[str, Any] = Depends(get_pri
         history.append({
             "checkpoint_id": cp.checkpoint_id,
             "timestamp": cp.timestamp.isoformat(),
-            "step": cp.step
+            "step": cp.step,
+            "status": "action_required" if "governance_shield_interrupt" in cp.state_data.get("steps", []) else "completed"
         })
         
     return {

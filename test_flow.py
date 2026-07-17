@@ -63,6 +63,36 @@ def test_integration():
         res = client.get(f"{GOV_URL}/api/v1/compliance/status", headers=admin_headers)
         print(f"Updated Compliance Score: {res.json()['overall_compliance_score']}%")
         print(f"Controls details:\n{res.json()['controls']}\n")
+        
+        # Step 6: Trigger a high-risk tool call (should get intercepted by AGT)
+        print("--- Step 6: Executing High-Risk Tool Request (Should Intercept) ---")
+        res = client.post(
+            f"{ORCH_URL}/api/v1/threads/{thread_id}/runs",
+            json={"input": "delete all backup log files"},
+            headers=user_headers
+        )
+        run_data = res.json()
+        print(f"Run Status: {run_data['status']}")
+        print(f"Pending Action Details: {run_data['output']['pending_action']}")
+        print(f"Steps Executed: {run_data['output']['steps_executed']}\n")
+        
+        # Step 7: Approve the tool action to resume (HITL)
+        print("--- Step 7: Submitting Human Approval (HITL) ---")
+        res = client.post(
+            f"{ORCH_URL}/api/v1/threads/{thread_id}/runs",
+            json={"approve_action": True},
+            headers=user_headers
+        )
+        resume_data = res.json()
+        print(f"Resumed Run Status: {resume_data['status']}")
+        print(f"Agent Resumed Output: {resume_data['output']['response']}")
+        print(f"Steps Executed: {resume_data['output']['steps_executed']}\n")
+
+        # Step 8: Query final compliance status (confirm EU-AI-Act-Art-9 logs)
+        print("--- Step 8: Querying Final Compliance Status (Including AGT Scans) ---")
+        res = client.get(f"{GOV_URL}/api/v1/compliance/status", headers=admin_headers)
+        print(f"Final Compliance Score: {res.json()['overall_compliance_score']}%")
+        print(f"Final Controls details:\n{res.json()['controls']}\n")
 
 if __name__ == "__main__":
     if not wait_for_services():

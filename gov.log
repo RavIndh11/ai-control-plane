@@ -1,18 +1,22 @@
 /home/aravindh/Projects/enterprise-ai-control-plane/venv/lib/python3.14/site-packages/pydantic/_internal/_config.py:386: UserWarning: Valid config keys have changed in V2:
 * 'orm_mode' has been renamed to 'from_attributes'
   warnings.warn(message, UserWarning)
-INFO:     Started server process [217376]
+INFO:     Started server process [28810]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:36708 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57880 - "GET /health HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:36710 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57888 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:36712 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+INFO:     127.0.0.1:57898 - "POST /api/v1/evidence HTTP/1.1" 201 Created
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:36710 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57888 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
+[Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
+INFO:     127.0.0.1:57910 - "POST /api/v1/evidence HTTP/1.1" 201 Created
+[Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
+INFO:     127.0.0.1:57888 - "GET /api/v1/compliance/status HTTP/1.1" 200 OK
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [217376]
+INFO:     Finished server process [28810]

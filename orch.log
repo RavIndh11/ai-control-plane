@@ -1,15 +1,25 @@
-INFO:     Started server process [217377]
+INFO:     Started server process [28811]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
-INFO:     127.0.0.1:38102 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48396 - "GET / HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:38104 - "POST /api/v1/threads HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48408 - "POST /api/v1/threads HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:38104 - "POST /api/v1/threads/th_997806b61ab0/runs HTTP/1.1" 200 OK
+[Warning] LLM Gateway unreachable ([Errno 111] Connection refused). Using mock local generation node.
+INFO:     127.0.0.1:48408 - "POST /api/v1/threads/th_91adc81dc93e/runs HTTP/1.1" 200 OK
 [Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
-INFO:     127.0.0.1:38104 - "POST /api/v1/threads/th_997806b61ab0/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48408 - "POST /api/v1/threads/th_91adc81dc93e/runs HTTP/1.1" 200 OK
+[Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
+[AGT] Agent requests high-risk tool call execution: {'tool': 'terminal_executor', 'arguments': {'command': 'delete all backup log files'}}
+[AGT] Governance Shield triggered. Pausing graph for human-in-the-loop (HITL) approval.
+INFO:     127.0.0.1:48408 - "POST /api/v1/threads/th_91adc81dc93e/runs HTTP/1.1" 200 OK
+[Warning] Cerbos PDP unreachable at http://localhost:3592. Emulating authorization rules locally.
+[AGT] Resuming thread from checkpoint. Admin decision: True
+[AGT] Agent requests high-risk tool call execution: {'tool': 'terminal_executor', 'arguments': {'command': 'delete all backup log files'}}
+[AGT] Tool execution approved. Executing tool.
+INFO:     127.0.0.1:48408 - "POST /api/v1/threads/th_91adc81dc93e/runs HTTP/1.1" 200 OK
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [217377]
+INFO:     Finished server process [28811]
