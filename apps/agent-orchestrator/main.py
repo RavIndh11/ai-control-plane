@@ -54,6 +54,40 @@ NEMO_GUARDRAILS_URL = os.getenv("NEMO_GUARDRAILS_URL", "")  # e.g. http://nemo-g
 QDRANT_URL = os.getenv("QDRANT_URL", "")  # e.g. http://qdrant:6333
 QDRANT_COLLECTION = os.getenv("QDRANT_COLLECTION", "manifold_kb")
 
+qdrant_client = None
+if QDRANT_URL:
+    try:
+        from qdrant_client import QdrantClient
+        qdrant_client = QdrantClient(url=QDRANT_URL, timeout=3.0)
+        if not qdrant_client.collection_exists(QDRANT_COLLECTION):
+            from qdrant_client.http import models
+            qdrant_client.create_collection(
+                collection_name=QDRANT_COLLECTION,
+                vectors_config=models.VectorParams(size=1536, distance=models.Distance.COSINE),
+            )
+            print(f"[Qdrant] Collection '{QDRANT_COLLECTION}' initialized.")
+    except Exception as e:
+        print(f"[Qdrant Init Warning] Failed to initialize Qdrant: {e}")
+
+def get_embedding_sync(text: str, tenant_id: str) -> List[float]:
+    try:
+        with httpx.Client() as client:
+            res = client.post(
+                f"{LLM_GATEWAY_URL}/embeddings",
+                json={
+                    "model": "text-embedding-3-small",
+                    "input": text,
+                    "user": "system"
+                },
+                headers={"X-Tenant-ID": tenant_id, "X-User-Role": "system-workload"},
+                timeout=2.0
+            )
+            if res.status_code == 200:
+                return res.json()["data"][0]["embedding"]
+    except Exception as e:
+        pass
+    return [0.0] * 1536
+
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine = create_engine(DATABASE_URL, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -413,7 +447,32 @@ def generation_node(state: AgentState) -> AgentState:
         return state
         
     user_input = state["input"]
+    tenant_id = state.get("tenant_id", "default")
     output = ""
+    
+    # 1. RAG Context Lookup via Qdrant Client
+    qdrant_context = ""
+    if QDRANT_URL and qdrant_client:
+        try:
+            vector = get_embedding_sync(user_input, tenant_id)
+            search_result = qdrant_client.search(
+                collection_name=QDRANT_COLLECTION,
+                query_vector=vector,
+                limit=3
+            )
+            qdrant_context = "\n".join(
+                hit.payload.get("content", "") for hit in search_result if hit.payload
+            )
+        except Exception as e:
+            print(f"[Qdrant] RAG search failed: {e}")
+
+    messages = [
+        {"role": "system", "content": (
+            f"You are an enterprise AI assistant for tenant '{tenant_id}'. "
+            + (f"\n\nRelevant context:\n{qdrant_context}" if qdrant_context else "")
+        )},
+        {"role": "user", "content": user_input}
+    ]
     
     try:
         with httpx.Client() as client:
@@ -421,11 +480,11 @@ def generation_node(state: AgentState) -> AgentState:
                 f"{LLM_GATEWAY_URL}/chat/completions",
                 json={
                     "model": LLM_MODEL,
-                    "messages": [{"role": "user", "content": user_input}],
+                    "messages": messages,
                     "temperature": 0.7,
                     "user": state.get("user_id", "user_default"),
                     "metadata": {
-                        "tenant_id": state.get("tenant_id", "tenant_default"),
+                        "tenant_id": tenant_id,
                         "thread_id": state.get("thread_id", "thread_default")
                     }
                 },
@@ -1028,21 +1087,21 @@ async def stream_thread(thread_id: str, req: ThreadRun, principal: Dict[str, Any
 
             # Optionally enrich prompt with Qdrant context
             qdrant_context = ""
-            if QDRANT_URL:
+            if QDRANT_URL and qdrant_client:
                 try:
-                    async with httpx.AsyncClient() as client:
-                        qdrant_res = await client.post(
-                            f"{QDRANT_URL}/collections/{QDRANT_COLLECTION}/points/search",
-                            json={"vector": [0.0] * 1536, "limit": 3, "with_payload": True},
-                            timeout=3.0
+                    def _qdrant_search():
+                        vector = get_embedding_sync(state_to_run["input"], tenant_id)
+                        return qdrant_client.search(
+                            collection_name=QDRANT_COLLECTION,
+                            query_vector=vector,
+                            limit=3
                         )
-                        if qdrant_res.status_code == 200:
-                            hits = qdrant_res.json().get("result", [])
-                            qdrant_context = "\n".join(
-                                h["payload"].get("content", "") for h in hits if "payload" in h
-                            )
+                    search_result = await loop.run_in_executor(None, _qdrant_search)
+                    qdrant_context = "\n".join(
+                        hit.payload.get("content", "") for hit in search_result if hit.payload
+                    )
                 except Exception as e:
-                    print(f"[Qdrant] Context lookup failed: {e}")
+                    print(f"[Qdrant] Streaming context lookup failed: {e}")
 
             messages = [
                 {"role": "system", "content": (
