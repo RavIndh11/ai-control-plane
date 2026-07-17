@@ -33,7 +33,32 @@ interface ChatMessage {
   text: string;
   isSafe?: boolean;
   steps?: string[];
+  pendingAction?: any;
   timestamp: string;
+}
+
+interface AIBOMAsset {
+  asset_id: string;
+  name: string;
+  type: string;
+  location: string;
+  status: string;
+  risk_level: string;
+  risk_factors: string[];
+}
+
+interface TopologyNode {
+  id: string;
+  label: string;
+  type: string;
+  status: string;
+  details: string;
+}
+
+interface TopologyLink {
+  source: string;
+  target: string;
+  label: string;
 }
 
 // --- Preloaded/Simulated Mock Data ---
@@ -43,20 +68,55 @@ const INITIAL_CONTROLS: Control[] = [
   { control_id: 'EU-AI-Act-Art-9', name: 'Risk Management System', description: 'Identify and mitigate safety, toxicity, and alignment risks.', status: 'action_required', evidence_count: 0 }
 ];
 
-const MOCK_HISTORIC_EVIDENCE: Evidence[] = [];
+const MOCK_AIBOM: AIBOMAsset[] = [
+  { asset_id: 'ast_endpoint_01', name: 'Developer Workstation (user_default)', type: 'developer_endpoint', location: 'LAN Client Host IP', status: 'active', risk_level: 'medium', risk_factors: ['policy_violation_in_history'] },
+  { asset_id: 'ast_orchestrator_01', name: 'Agent Orchestrator (LangGraph Core)', type: 'autonomous_agent', location: 'Kubernetes Cluster Pod', status: 'active', risk_level: 'high', risk_factors: ['unapproved_tool_execution_intercepted'] },
+  { asset_id: 'ast_gateway_01', name: 'LiteLLM API Gateway Router', type: 'ai_gateway_proxy', location: 'Kubernetes Service (Port 4000)', status: 'active', risk_level: 'info', risk_factors: [] },
+  { asset_id: 'ast_llm_01', name: 'External Ollama Model Runner', type: 'llm_model_runtime', location: 'LAN Server IP (Port 11434)', status: 'active', risk_level: 'info', risk_factors: [] },
+  { asset_id: 'ast_qdrant_01', name: 'Qdrant Vector Database', type: 'vector_datastore', location: 'Kubernetes StatefulSet (Port 6333)', status: 'active', risk_level: 'info', risk_factors: [] }
+];
+
+const MOCK_NODES: TopologyNode[] = [
+  { id: 'user', label: 'User Browser', type: 'endpoint', status: 'danger', details: 'LAN User Session (Role: tenant-user)' },
+  { id: 'dashboard', label: 'Dashboard Console', type: 'app', status: 'safe', details: 'React UI Console (Port 30082)' },
+  { id: 'orchestrator', label: 'Agent Orchestrator', type: 'app', status: 'danger', details: 'LangGraph Orchestration Pod (Port 8001)' },
+  { id: 'governance', label: 'Governance Engine', type: 'app', status: 'safe', details: 'FastAPI Auditing Pod (Port 8000)' },
+  { id: 'postgres', label: 'PostgreSQL Database', type: 'database', status: 'safe', details: 'Audits & Checkpoints Storage (Port 5432)' },
+  { id: 'qdrant', label: 'Qdrant Vector DB', type: 'database', status: 'safe', details: 'Knowledge Vectors Storage (Port 6333)' },
+  { id: 'litellm', label: 'LiteLLM Gateway', type: 'runtime', status: 'safe', details: 'Model Gateway Router (Port 4000)' },
+  { id: 'ollama', label: 'External Ollama Node', type: 'runtime', status: 'safe', details: 'LAN Model Runner Machine (Port 11434)' }
+];
+
+const MOCK_LINKS: TopologyLink[] = [
+  { source: 'user', target: 'dashboard', label: 'HTTPS' },
+  { source: 'dashboard', target: 'orchestrator', label: 'REST API' },
+  { source: 'orchestrator', target: 'postgres', label: 'SQL' },
+  { source: 'orchestrator', target: 'governance', label: 'GRC webhook' },
+  { source: 'governance', target: 'postgres', label: 'SQL' },
+  { source: 'orchestrator', target: 'qdrant', label: 'gRPC' },
+  { source: 'orchestrator', target: 'litellm', label: 'REST API' },
+  { source: 'litellm', target: 'ollama', label: 'External bridge' }
+];
 
 function App() {
   // Navigation & Tenant States
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'playground'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'aibom' | 'topology' | 'playground'>('dashboard');
   const [selectedTenant, setSelectedTenant] = useState<string>('tenant-acme');
   const [isLive, setIsLive] = useState<boolean>(false);
   const [isCheckingConnection, setIsCheckingConnection] = useState<boolean>(true);
 
   // Compliance Data States
   const [controls, setControls] = useState<Control[]>(INITIAL_CONTROLS);
-  const [evidenceLogs, setEvidenceLogs] = useState<Evidence[]>(MOCK_HISTORIC_EVIDENCE);
+  const [evidenceLogs, setEvidenceLogs] = useState<Evidence[]>([]);
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // AI-SPM Platform States
+  const [aibomAssets, setAibomAssets] = useState<AIBOMAsset[]>([]);
+  const [topologyNodes, setTopologyNodes] = useState<TopologyNode[]>(MOCK_NODES);
+  const [topologyLinks, setTopologyLinks] = useState<TopologyLink[]>(MOCK_LINKS);
+  const [aibomSearchQuery, setAibomSearchQuery] = useState<string>('');
+  const [hoveredNode, setHoveredNode] = useState<TopologyNode | null>(null);
 
   // Agent Chat Playground States
   const [threads, setThreads] = useState<Thread[]>([]);
@@ -64,6 +124,7 @@ function App() {
   const [messages, setMessages] = useState<Record<string, ChatMessage[]>>({});
   const [inputText, setInputText] = useState<string>('');
   const [isSending, setIsSending] = useState<boolean>(false);
+  const [pendingAction, setPendingAction] = useState<any | null>(null);
 
   // --- API Base URLs ---
   const GOV_API = window.location.hostname === 'localhost' 
@@ -100,14 +161,16 @@ function App() {
   // Fetch from Live APIs if online
   const fetchLiveDashboardData = async () => {
     try {
+      // 1. Fetch compliance status
       const res = await fetch(`${GOV_API}/api/v1/compliance/status`, {
-        headers: { 'X-Tenant-ID': selectedTenant }
+        headers: { 
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin' 
+        }
       });
       const data = await res.json();
       
-      // Map API controls output back to our layout controls
       const apiControlsMap = new Map(data.controls.map((c: any) => [c.control_id, c]));
-      
       setControls(prev => prev.map(ctrl => {
         const apiCtrl = apiControlsMap.get(ctrl.control_id) as any;
         if (apiCtrl) {
@@ -119,6 +182,28 @@ function App() {
         }
         return ctrl;
       }));
+
+      // 2. Fetch AI-BOM Inventory
+      const bomRes = await fetch(`${GOV_API}/api/v1/compliance/ai-bom`, {
+        headers: { 
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin' 
+        }
+      });
+      const bomData = await bomRes.json();
+      setAibomAssets(bomData.assets);
+
+      // 3. Fetch Topology Graph Network
+      const topRes = await fetch(`${GOV_API}/api/v1/compliance/topology`, {
+        headers: { 
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin' 
+        }
+      });
+      const topData = await topRes.json();
+      setTopologyNodes(topData.nodes);
+      setTopologyLinks(topData.links);
+
     } catch (err) {
       console.error('Failed fetching live dashboard details', err);
     }
@@ -126,10 +211,10 @@ function App() {
 
   // Populate mock configurations for simulation mode
   const loadSimulatedData = () => {
-    // If we've already done simulation steps, don't overwrite
-    if (evidenceLogs.length > 0) return;
     setControls(INITIAL_CONTROLS);
-    setEvidenceLogs([]);
+    setAibomAssets(MOCK_AIBOM);
+    setTopologyNodes(MOCK_NODES);
+    setTopologyLinks(MOCK_LINKS);
   };
 
   // --- Compliance Score Computation ---
@@ -167,6 +252,7 @@ function App() {
             timestamp: new Date().toLocaleTimeString()
           }]
         }));
+        setPendingAction(null);
       } catch (err) {
         alert('Failed starting live thread session. Check orchestrator logs.');
       }
@@ -189,6 +275,7 @@ function App() {
           timestamp: new Date().toLocaleTimeString()
         }]
       }));
+      setPendingAction(null);
     }
   };
 
@@ -225,21 +312,37 @@ function App() {
         });
         const data = await res.json();
         
-        const isQuerySafe = !data.output.response.includes('Policy violation');
-        
-        const agentMsg: ChatMessage = {
-          id: `msg_${Date.now() + 1}`,
-          sender: isQuerySafe ? 'agent' : 'system',
-          text: data.output.response,
-          isSafe: isQuerySafe,
-          steps: data.output.steps_executed,
-          timestamp: new Date().toLocaleTimeString()
-        };
-
-        setMessages(prev => ({
-          ...prev,
-          [activeThreadId]: [...(prev[activeThreadId] || []), agentMsg]
-        }));
+        if (data.status === 'action_required') {
+          // Action intercepted (HITL)
+          setPendingAction(data.output.pending_action);
+          const blockMsg: ChatMessage = {
+            id: `msg_${Date.now() + 1}`,
+            sender: 'system',
+            text: `⚠️ INTERCEPTED: Agent requested high-risk execution: ${data.output.pending_action.tool}`,
+            steps: data.output.steps_executed,
+            pendingAction: data.output.pending_action,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setMessages(prev => ({
+            ...prev,
+            [activeThreadId]: [...(prev[activeThreadId] || []), blockMsg]
+          }));
+        } else {
+          // Normal complete response
+          const isQuerySafe = !data.output.response.includes('Policy violation');
+          const agentMsg: ChatMessage = {
+            id: `msg_${Date.now() + 1}`,
+            sender: isQuerySafe ? 'agent' : 'system',
+            text: data.output.response,
+            isSafe: isQuerySafe,
+            steps: data.output.steps_executed,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setMessages(prev => ({
+            ...prev,
+            [activeThreadId]: [...(prev[activeThreadId] || []), agentMsg]
+          }));
+        }
         
         // Refresh compliance numbers
         fetchLiveDashboardData();
@@ -255,6 +358,29 @@ function App() {
         let isQuerySafe = true;
         let responseText = `Processed query '${text}' successfully within tenant context.`;
         let steps = ['guardrail_check', 'generation'];
+
+        // Simulated Interrupt (HITL Tool Intercept)
+        if (lowerText.includes('delete') || lowerText.includes('run command') || lowerText.includes('destroy')) {
+          const action = {
+            tool: 'terminal_executor',
+            arguments: { command: text }
+          };
+          setPendingAction(action);
+          const blockMsg: ChatMessage = {
+            id: `msg_${Date.now() + 1}`,
+            sender: 'system',
+            text: `⚠️ INTERCEPTED: Agent requested high-risk execution: ${action.tool}`,
+            steps: ['guardrail_check', 'agent_reasoning', 'governance_shield', 'governance_shield_interrupt'],
+            pendingAction: action,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setMessages(prev => ({
+            ...prev,
+            [activeThreadId]: [...(prev[activeThreadId] || []), blockMsg]
+          }));
+          setIsSending(false);
+          return;
+        }
 
         // Trigger Guardrail Breach
         if (lowerText.includes('select') || lowerText.includes('drop') || lowerText.includes('bypass')) {
@@ -283,7 +409,10 @@ function App() {
 
           setEvidenceLogs(prev => [newEvidence, ...prev]);
 
-          // Mark control compliant since security detected it
+          // Update Asset and Node status
+          setTopologyNodes(prev => prev.map(n => n.id === 'user' ? { ...n, status: 'danger' } : n));
+          setAibomAssets(prev => prev.map(a => a.asset_id === 'ast_endpoint_01' ? { ...a, risk_level: 'medium', risk_factors: ['policy_violation_in_history'] } : a));
+
           setControls(prev => prev.map(c => {
             if (c.control_id === 'SOC2-CC-6.1') {
               return { ...c, status: 'compliant', evidence_count: c.evidence_count + 1 };
@@ -305,22 +434,152 @@ function App() {
           ...prev,
           [activeThreadId]: [...(prev[activeThreadId] || []), agentMsg]
         }));
-        
         setIsSending(false);
-      }, 1000);
+      }, 800);
     }
   };
 
-  // --- Filtering Logs ---
+  // --- Submit User Decision on Intercepted Tool call (HITL) ---
+  const handleHITLDecision = async (approve: boolean) => {
+    if (!activeThreadId || !pendingAction) return;
+    setIsSending(true);
+
+    if (isLive) {
+      try {
+        const res = await fetch(`${ORCH_API}/api/v1/threads/${activeThreadId}/runs`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tenant-ID': selectedTenant
+          },
+          body: JSON.stringify({ approve_action: approve })
+        });
+        const data = await res.json();
+        
+        const decisionMsg: ChatMessage = {
+          id: `msg_${Date.now()}`,
+          sender: 'system',
+          text: `Action ${approve ? 'APPROVED' : 'REJECTED'} by administrator. Executing resolution...`,
+          timestamp: new Date().toLocaleTimeString()
+        };
+
+        const agentMsg: ChatMessage = {
+          id: `msg_${Date.now() + 1}`,
+          sender: approve ? 'agent' : 'system',
+          text: data.output.response,
+          isSafe: approve,
+          steps: data.output.steps_executed,
+          timestamp: new Date().toLocaleTimeString()
+        };
+
+        setMessages(prev => ({
+          ...prev,
+          [activeThreadId]: [...(prev[activeThreadId] || []), decisionMsg, agentMsg]
+        }));
+        setPendingAction(null);
+        fetchLiveDashboardData();
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsSending(false);
+      }
+    } else {
+      // Simulated HITL Resolution
+      setTimeout(() => {
+        const decisionMsg: ChatMessage = {
+          id: `msg_${Date.now()}`,
+          sender: 'system',
+          text: `Action ${approve ? 'APPROVED' : 'REJECTED'} by administrator. Executing resolution...`,
+          timestamp: new Date().toLocaleTimeString()
+        };
+
+        const responseText = approve 
+          ? `Success: Action '${pendingAction.tool}' approved and executed.`
+          : `Action blocked: Execution of tool '${pendingAction.tool}' rejected by admin.`;
+
+        const agentMsg: ChatMessage = {
+          id: `msg_${Date.now() + 1}`,
+          sender: approve ? 'agent' : 'system',
+          text: responseText,
+          isSafe: approve,
+          steps: ['guardrail_check', 'agent_reasoning', 'governance_shield', approve ? 'governance_shield_executed' : 'governance_shield_rejected'],
+          timestamp: new Date().toLocaleTimeString()
+        };
+
+        // GRC Engine Update for Agent Action audit
+        const timestamp = new Date().toISOString();
+        const evidenceId = `ev_${Math.random().toString(36).substr(2, 9)}`;
+        const newEvidence: Evidence = {
+          evidence_id: evidenceId,
+          control_id: 'EU-AI-Act-Art-9',
+          source_component: 'agent-orchestrator',
+          event_type: 'agent_action_audit',
+          severity: approve ? 'info' : 'high',
+          payload: {
+            tool: pendingAction.tool,
+            decision: approve ? 'approved' : 'rejected'
+          },
+          minio_object_path: `tenants/${selectedTenant}/evidence/${timestamp.substring(0, 10)}/${evidenceId}.json`,
+          created_at: timestamp
+        };
+
+        setEvidenceLogs(prev => [newEvidence, ...prev]);
+
+        // Update Node Status
+        setTopologyNodes(prev => prev.map(n => n.id === 'orchestrator' ? { ...n, status: approve ? 'safe' : 'danger' } : n));
+        setAibomAssets(prev => prev.map(a => a.asset_id === 'ast_orchestrator_01' ? { ...a, risk_level: approve ? 'info' : 'high', risk_factors: approve ? [] : ['unapproved_tool_execution_intercepted'] } : a));
+
+        setControls(prev => prev.map(c => {
+          if (c.control_id === 'EU-AI-Act-Art-9') {
+            return { ...c, status: 'compliant', evidence_count: c.evidence_count + 1 };
+          }
+          return c;
+        }));
+
+        setMessages(prev => ({
+          ...prev,
+          [activeThreadId]: [...(prev[activeThreadId] || []), decisionMsg, agentMsg]
+        }));
+        setPendingAction(null);
+        setIsSending(false);
+      }, 600);
+    }
+  };
+
+  // Filter logs by search query
   const filteredLogs = evidenceLogs.filter(log => {
     const searchLower = searchQuery.toLowerCase();
     return (
       log.control_id.toLowerCase().includes(searchLower) ||
+      log.source_component.toLowerCase().includes(searchLower) ||
       log.event_type.toLowerCase().includes(searchLower) ||
       log.severity.toLowerCase().includes(searchLower) ||
       JSON.stringify(log.payload).toLowerCase().includes(searchLower)
     );
   });
+
+  // Filter assets by search query
+  const filteredAssets = aibomAssets.filter(asset => {
+    const searchLower = aibomSearchQuery.toLowerCase();
+    return (
+      asset.asset_id.toLowerCase().includes(searchLower) ||
+      asset.name.toLowerCase().includes(searchLower) ||
+      asset.type.toLowerCase().includes(searchLower) ||
+      asset.location.toLowerCase().includes(searchLower)
+    );
+  });
+
+  // Coordinates for rendering the nodes statically on the SVG canvas
+  const nodePositions: Record<string, { x: number; y: number }> = {
+    user: { x: 80, y: 150 },
+    dashboard: { x: 260, y: 80 },
+    orchestrator: { x: 260, y: 220 },
+    governance: { x: 480, y: 80 },
+    postgres: { x: 700, y: 80 },
+    qdrant: { x: 480, y: 320 },
+    litellm: { x: 480, y: 200 },
+    ollama: { x: 700, y: 200 }
+  };
 
   return (
     <div className="app-container">
@@ -333,7 +592,7 @@ function App() {
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               </svg>
             </div>
-            <div className="logo-text">AI Control Plane</div>
+            <div className="logo-text">Manifold AI-SPM</div>
           </div>
 
           <nav className="nav-links">
@@ -342,6 +601,18 @@ function App() {
               onClick={() => setActiveTab('dashboard')}
             >
               📊 Compliance Dashboard
+            </button>
+            <button 
+              className={`nav-button ${activeTab === 'aibom' ? 'active' : ''}`}
+              onClick={() => setActiveTab('aibom')}
+            >
+              📦 AI-BOM Inventory
+            </button>
+            <button 
+              className={`nav-button ${activeTab === 'topology' ? 'active' : ''}`}
+              onClick={() => setActiveTab('topology')}
+            >
+              🌐 Topology Map
             </button>
             <button 
               className={`nav-button ${activeTab === 'playground' ? 'active' : ''}`}
@@ -368,7 +639,12 @@ function App() {
       <main className="main-content">
         <header className="header-row">
           <div>
-            <h1>{activeTab === 'dashboard' ? 'Compliance Operations' : 'Interactive Agent Graph'}</h1>
+            <h1>
+              {activeTab === 'dashboard' && 'Compliance Operations'}
+              {activeTab === 'aibom' && 'AI Bill of Materials (AI-BOM)'}
+              {activeTab === 'topology' && 'Asset Topology Map'}
+              {activeTab === 'playground' && 'Interactive Agent Graph'}
+            </h1>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '4px' }}>
               Scoped context: {selectedTenant}
             </p>
@@ -384,7 +660,8 @@ function App() {
           </select>
         </header>
 
-        {activeTab === 'dashboard' ? (
+        {/* 📊 TAB 1: COMPLIANCE DASHBOARD */}
+        {activeTab === 'dashboard' && (
           <>
             {/* 📈 METRICS GRID */}
             <section className="metrics-grid">
@@ -527,8 +804,182 @@ function App() {
               )}
             </section>
           </>
-        ) : (
-          /* 🤖 INTERACTIVE AGENT GRAPH PLAYGROUND */
+        )}
+
+        {/* 📦 TAB 2: AI-BOM INVENTORY */}
+        {activeTab === 'aibom' && (
+          <section className="logs-container">
+            <div className="logs-header">
+              <h2 className="section-title" style={{ margin: 0 }}>AI Bill of Materials (AI-BOM) Inventory</h2>
+              <input 
+                type="text" 
+                placeholder="Filter assets..." 
+                className="logs-search" 
+                value={aibomSearchQuery}
+                onChange={(e) => setAibomSearchQuery(e.target.value)}
+              />
+            </div>
+            
+            <table className="logs-table">
+              <thead>
+                <tr>
+                  <th>Asset ID</th>
+                  <th>Asset Name</th>
+                  <th>Vector Type</th>
+                  <th>Location</th>
+                  <th>Risk Level</th>
+                  <th>Risk Factors</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAssets.map(asset => (
+                  <tr key={asset.asset_id}>
+                    <td><span className="control-id" style={{ fontSize: '0.8rem' }}>{asset.asset_id}</span></td>
+                    <td style={{ fontWeight: 600 }}>{asset.name}</td>
+                    <td>{asset.type.replace('_', ' ')}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{asset.location}</td>
+                    <td>
+                      <span className={`severity-badge ${asset.risk_level}`}>
+                        {asset.risk_level}
+                      </span>
+                    </td>
+                    <td>
+                      {asset.risk_factors.length === 0 ? (
+                        <span style={{ color: 'var(--color-success)', fontSize: '0.85rem' }}>✓ Secure</span>
+                      ) : (
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                          {asset.risk_factors.map(factor => (
+                            <span key={factor} className="severity-badge critical" style={{ fontSize: '0.7rem', textTransform: 'none' }}>
+                              {factor.replace(/_/g, ' ')}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
+
+        {/* 🌐 TAB 3: TOPOLOGY MAP */}
+        {activeTab === 'topology' && (
+          <section className="logs-container" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <h2 className="section-title" style={{ margin: 0 }}>Cluster Asset & Data Flow Topology</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px', height: '480px' }}>
+              
+              {/* Topology SVG Canvas */}
+              <div style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', borderRadius: '12px', overflow: 'hidden', position: 'relative' }}>
+                <svg width="100%" height="100%" viewBox="0 0 850 450">
+                  <defs>
+                    <marker id="arrow" viewBox="0 0 10 10" refX="24" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                      <path d="M 0 0 L 10 5 L 0 10 z" fill="rgba(255,255,255,0.15)" />
+                    </marker>
+                    <filter id="glow-safe" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="4" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                    <filter id="glow-danger" x="-20%" y="-20%" width="140%" height="140%">
+                      <feGaussianBlur stdDeviation="6" result="blur" />
+                      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                    </filter>
+                  </defs>
+
+                  {/* Connection Lines (Links) */}
+                  {topologyLinks.map((link, idx) => {
+                    const from = nodePositions[link.source];
+                    const to = nodePositions[link.target];
+                    if (!from || !to) return null;
+                    return (
+                      <g key={idx}>
+                        <line 
+                          x1={from.x} 
+                          y1={from.y} 
+                          x2={to.x} 
+                          y2={to.y} 
+                          stroke="rgba(255, 255, 255, 0.15)" 
+                          strokeWidth="2"
+                          strokeDasharray="5,5"
+                          markerEnd="url(#arrow)"
+                        />
+                        <text 
+                          x={(from.x + to.x) / 2} 
+                          y={(from.y + to.y) / 2 - 5}
+                          fill="var(--text-secondary)"
+                          fontSize="10"
+                          textAnchor="middle"
+                        >
+                          {link.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Render Nodes */}
+                  {topologyNodes.map(node => {
+                    const pos = nodePositions[node.id];
+                    if (!pos) return null;
+                    const isDanger = node.status === 'danger';
+                    return (
+                      <g 
+                        key={node.id} 
+                        transform={`translate(${pos.x}, ${pos.y})`}
+                        style={{ cursor: 'pointer' }}
+                        onMouseEnter={() => setHoveredNode(node)}
+                        onMouseLeave={() => setHoveredNode(null)}
+                      >
+                        <circle 
+                          r="16" 
+                          fill={isDanger ? 'var(--color-danger)' : 'rgba(16, 185, 129, 0.2)'}
+                          stroke={isDanger ? '#f87171' : 'var(--color-success)'}
+                          strokeWidth="2"
+                          filter={isDanger ? 'url(#glow-danger)' : 'url(#glow-safe)'}
+                          className={isDanger ? 'pulse-node' : ''}
+                        />
+                        <text 
+                          y="32" 
+                          fill="var(--text-primary)" 
+                          fontSize="11" 
+                          fontWeight="600"
+                          textAnchor="middle"
+                        >
+                          {node.label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+
+              {/* Node Inspector Panel */}
+              <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h3>Node Inspector</h3>
+                {hoveredNode ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontSize: '1.1rem', fontWeight: 600 }}>{hoveredNode.label}</div>
+                    <div>Type: <span className="control-id" style={{ fontSize: '0.8rem' }}>{hoveredNode.type}</span></div>
+                    <div>Status: 
+                      <span className={`severity-badge ${hoveredNode.status === 'danger' ? 'critical' : 'info'}`} style={{ marginLeft: '6px' }}>
+                        {hoveredNode.status === 'danger' ? 'Vulnerable / Alert' : 'Secure'}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: '10px', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                      {hoveredNode.details}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                    Hover over any network node inside the topology map to inspect its running details and active alert flags.
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* 🤖 TAB 4: AGENT PLAYGROUND */}
+        {activeTab === 'playground' && (
           <div className="playground-container">
             {/* Sidebar list of thread sessions */}
             <div className="thread-list-panel">
@@ -540,7 +991,16 @@ function App() {
                   <div 
                     key={t.thread_id} 
                     className={`thread-item ${activeThreadId === t.thread_id ? 'active' : ''}`}
-                    onClick={() => setActiveThreadId(t.thread_id)}
+                    onClick={() => {
+                      setActiveThreadId(t.thread_id);
+                      const tMsgs = messages[t.thread_id] || [];
+                      const lastMsg = tMsgs[tMsgs.length - 1];
+                      if (lastMsg && lastMsg.pendingAction) {
+                        setPendingAction(lastMsg.pendingAction);
+                      } else {
+                        setPendingAction(null);
+                      }
+                    }}
                   >
                     <h5>{t.thread_id}</h5>
                     <span>{new Date(t.created_at).toLocaleTimeString()}</span>
@@ -571,15 +1031,43 @@ function App() {
                             ? 'agent'
                             : 'agent'
                         }`}
-                        style={msg.sender === 'system' && !msg.text.includes('Policy violation') ? { color: 'var(--text-secondary)', fontSize: '0.8rem', alignSelf: 'center', background: 'transparent', border: 'none' } : {}}
+                        style={msg.sender === 'system' && !msg.text.includes('Policy violation') && !msg.pendingAction ? { color: 'var(--text-secondary)', fontSize: '0.8rem', alignSelf: 'center', background: 'transparent', border: 'none' } : {}}
                       >
                         {msg.text}
+
+                        {/* Interactive HITL Panel for intercepted actions */}
+                        {msg.pendingAction && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '12px', padding: '12px', background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Requested Tool: <span className="control-id">{msg.pendingAction.tool}</span></div>
+                            <pre style={{ fontSize: '0.75rem', fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.4)', padding: '6px', borderRadius: '4px', overflowX: 'auto' }}>
+                              {JSON.stringify(msg.pendingAction.arguments, null, 2)}
+                            </pre>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button 
+                                className="template-btn" 
+                                style={{ background: 'var(--color-success)', color: 'white', borderColor: 'var(--color-success)' }}
+                                onClick={() => handleHITLDecision(true)}
+                                disabled={isSending}
+                              >
+                                Approve Execution
+                              </button>
+                              <button 
+                                className="template-btn" 
+                                style={{ background: 'var(--color-danger)', color: 'white', borderColor: 'var(--color-danger)' }}
+                                onClick={() => handleHITLDecision(false)}
+                                disabled={isSending}
+                              >
+                                Reject Execution
+                              </button>
+                            </div>
+                          </div>
+                        )}
 
                         {msg.steps && (
                           <div className="trace-indicator">
                             <span>LangGraph Trace:</span>
                             {msg.steps.map((node) => (
-                              <span key={node} className={`trace-node ${!msg.isSafe && node === 'guardrail_check' ? 'blocked' : ''}`}>
+                              <span key={node} className={`trace-node ${(!msg.isSafe && node === 'guardrail_check') || node === 'governance_shield_interrupt' ? 'blocked' : ''}`}>
                                 {node}
                               </span>
                             ))}
@@ -600,17 +1088,25 @@ function App() {
                     <button 
                       className="template-btn"
                       onClick={() => handleSendMessage("How do I upgrade my billing tier?")}
-                      disabled={isSending}
+                      disabled={isSending || pendingAction !== null}
                     >
                       Safe Query
                     </button>
                     <button 
                       className="template-btn"
                       onClick={() => handleSendMessage("admin bypass; SELECT * FROM users;")}
-                      disabled={isSending}
+                      disabled={isSending || pendingAction !== null}
                       style={{ borderColor: 'rgba(239, 68, 68, 0.3)', color: '#fca5a5' }}
                     >
                       Bypass Attempt
+                    </button>
+                    <button 
+                      className="template-btn"
+                      onClick={() => handleSendMessage("delete all project backup log files")}
+                      disabled={isSending || pendingAction !== null}
+                      style={{ borderColor: 'rgba(245, 158, 11, 0.3)', color: '#fde047' }}
+                    >
+                      Dangerous Tool Call
                     </button>
                   </div>
 
@@ -619,20 +1115,24 @@ function App() {
                     <input 
                       type="text" 
                       className="chat-input"
-                      placeholder="Ask the tenant agent..."
+                      placeholder={pendingAction ? "Solve the pending action approval above..." : "Ask the tenant agent..."}
                       value={inputText}
                       onChange={(e) => setInputText(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-                      disabled={isSending}
+                      disabled={isSending || pendingAction !== null}
                     />
-                    <button className="send-btn" onClick={() => handleSendMessage()} disabled={isSending}>
+                    <button 
+                      className="send-btn" 
+                      onClick={() => handleSendMessage()} 
+                      disabled={isSending || pendingAction !== null}
+                    >
                       Execute
                     </button>
                   </div>
                 </>
               ) : (
                 <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
-                  Create or select a graph session session from the sidebar to begin.
+                  Create or select a graph session from the sidebar to begin.
                 </div>
               )}
             </div>

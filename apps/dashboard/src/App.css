@@ -666,3 +666,18 @@ body {
 .send-btn:hover {
   filter: brightness(1.1);
 }
+
+.pulse-node {
+  animation: pulse-danger 2s infinite alternate;
+}
+
+@keyframes pulse-danger {
+  0% {
+    r: 16px;
+    filter: drop-shadow(0 0 4px var(--color-danger));
+  }
+  100% {
+    r: 19px;
+    filter: drop-shadow(0 0 12px var(--color-danger));
+  }
+}
