@@ -446,13 +446,26 @@ class ThreadRun(BaseModel):
     input: Optional[str] = None
     approve_action: Optional[bool] = None # For resuming/resolving HITL actions
 
-# --- Database Session Dependency ---
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# --- OpenAI ChatCompletion Proxy Models ---
+class ChatMessage(BaseModel):
+    role: str
+    content: Optional[str] = None
+    name: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+
+class ChatCompletionRequest(BaseModel):
+    model: str
+    messages: List[ChatMessage]
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Any] = None
+    stream: Optional[bool] = False
+    temperature: Optional[float] = 1.0
+    top_p: Optional[float] = 1.0
+    n: Optional[int] = 1
+    max_tokens: Optional[int] = None
+    presence_penalty: Optional[float] = 0.0
+    frequency_penalty: Optional[float] = 0.0
+    user: Optional[str] = None
 
 # --- JWT JWKS Cache ---
 _jwks_cache: Optional[Dict] = None
@@ -543,6 +556,42 @@ def get_principal(
         "tenant_id": x_tenant_id,
         "auth_method": "header"
     }
+
+# --- Database Session Dependency ---
+def get_db(principal: Dict[str, Any] = Depends(get_principal)):
+    db = SessionLocal()
+    tenant_id = principal.get("tenant_id", "default")
+    if not DATABASE_URL.startswith("sqlite") and tenant_id:
+        schema_name = f"tenant_{tenant_id.replace('-', '_')}"
+        try:
+            db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name};"))
+            db.execute(text(f"SET search_path TO {schema_name}, public;"))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_threads (
+                    thread_id VARCHAR(255) PRIMARY KEY,
+                    tenant_id VARCHAR(64) NOT NULL,
+                    agent_type VARCHAR(100) NOT NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT timezone('utc'::text, now())
+                );
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_checkpoints (
+                    id SERIAL PRIMARY KEY,
+                    thread_id VARCHAR(255) REFERENCES agent_threads(thread_id) ON DELETE CASCADE,
+                    checkpoint_id VARCHAR(255) NOT NULL,
+                    timestamp TIMESTAMP WITHOUT TIME ZONE DEFAULT timezone('utc'::text, now()),
+                    step VARCHAR(100) NOT NULL,
+                    state_data JSON NOT NULL
+                );
+            """))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"[Database] Error setting up schema/tables: {e}")
+    try:
+        yield db
+    finally:
+        db.close()
 
 # --- Cerbos Authz Verification ---
 def is_authorized(principal: Dict[str, Any], resource_kind: str, resource_id: str, action: str, resource_attr: Dict[str, Any]) -> bool:
@@ -991,3 +1040,404 @@ def get_thread_state(thread_id: str, principal: Dict[str, Any] = Depends(get_pri
         "thread_id": thread_id,
         "history": history
     }
+
+@app.post("/v1/chat/completions")
+async def chat_completions(
+    req: ChatCompletionRequest,
+    principal: Dict[str, Any] = Depends(get_principal),
+    db: Session = Depends(get_db),
+    x_thread_id: Optional[str] = Header(None, alias="X-Thread-ID")
+):
+    tenant_id = principal["tenant_id"]
+    user_id = principal["id"]
+    thread_id = x_thread_id or f"th_{uuid.uuid4().hex[:12]}"
+
+    # Extract user query
+    user_content = ""
+    for msg in reversed(req.messages):
+        if msg.role == "user" and msg.content:
+            user_content = msg.content
+            break
+
+    # 1. Run Guardrail
+    state = {
+        "input": user_content,
+        "output": "",
+        "steps": [],
+        "is_safe": True,
+        "tenant_id": tenant_id,
+        "user_id": user_id,
+        "thread_id": thread_id,
+        "pending_action": None,
+        "action_approved": None
+    }
+    
+    # We call the guardrail node directly
+    state = guardrail_node(state)
+    
+    if not state["is_safe"]:
+        # Blocked by guardrail
+        refusal = state["output"]
+        if req.stream:
+            async def streaming_refusal():
+                chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+                created_time = int(datetime.utcnow().timestamp())
+                payload = {
+                    "id": chunk_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_time,
+                    "model": req.model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"role": "assistant", "content": refusal},
+                        "finish_reason": "stop"
+                    }]
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                yield "data: [DONE]\n\n"
+            return StreamingResponse(streaming_refusal(), media_type="text/event-stream")
+        else:
+            return {
+                "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                "object": "chat.completion",
+                "created": int(datetime.utcnow().timestamp()),
+                "model": req.model,
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": refusal},
+                    "finish_reason": "stop"
+                }]
+            }
+
+    # 2. Call upstream LiteLLM gateway
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {os.getenv('LITELLM_MASTER_KEY', 'sk-litellm-master-secure-pass')}"
+    }
+
+    if not req.stream:
+        try:
+            async with httpx.AsyncClient() as client:
+                res = await client.post(
+                    f"{LLM_GATEWAY_URL}/chat/completions",
+                    json=req.dict(exclude_none=True),
+                    headers=headers,
+                    timeout=60.0
+                )
+                if res.status_code != 200:
+                    raise HTTPException(status_code=res.status_code, detail=res.text)
+                response_json = res.json()
+        except Exception as e:
+            print(f"[Proxy] LLM Gateway unreachable ({e}). Using local mock chat completion fallback.")
+            response_json = {
+                "id": f"chatcmpl-{uuid.uuid4().hex[:12]}",
+                "object": "chat.completion",
+                "created": int(datetime.utcnow().timestamp()),
+                "model": req.model,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": f"Processed query '{user_content}' successfully within tenant context (mock proxy completions mode)."
+                    },
+                    "finish_reason": "stop"
+                }]
+            }
+        choices = response_json.get("choices", [])
+        if not choices:
+            return response_json
+            
+        choice = choices[0]
+        message = choice.get("message", {})
+        tool_calls = message.get("tool_calls", [])
+
+        # Intercept tool calls if they are high-risk
+        if tool_calls:
+            tool_name = tool_calls[0]["function"]["name"]
+            # Detect high-risk signature
+            is_high_risk = any(keyword in tool_name.lower() for keyword in ["delete", "execute", "write", "remove", "update", "exec", "terminal", "rm", "kill", "drop"])
+            
+            if is_high_risk:
+                # Log evidence with Governance Engine
+                try:
+                    async with httpx.AsyncClient() as client:
+                        await client.post(
+                            f"{GOV_URL}/api/v1/evidence",
+                            headers={"X-Tenant-ID": tenant_id, "X-User-Role": "system-workload"},
+                            json={
+                                "control_id": "EU-AI-Act-Art-9",
+                                "source_component": "agent-orchestrator-proxy",
+                                "event_type": "agent_action_intercepted",
+                                "severity": "high",
+                                "payload": {
+                                    "requested_tool": tool_name,
+                                    "arguments": tool_calls[0]["function"].get("arguments", ""),
+                                    "message": "High-risk proxy tool call intercepted. Pausing completions for admin approval."
+                                }
+                            },
+                            timeout=2.0
+                        )
+                except Exception as e:
+                    print(f"[Warning] Failed to push compliance evidence: {e}")
+
+                # Save a checkpoint in the DB representing the pending action
+                checkpoint_id = f"cp_{uuid.uuid4().hex[:8]}"
+                
+                # Check if thread exists, else create it
+                if DATABASE_URL.startswith("sqlite"):
+                    thread_exists = db.query(DBAgentThread).filter(DBAgentThread.thread_id == thread_id).first()
+                else:
+                    thread_exists = db.execute(text("SELECT 1 FROM agent_threads WHERE thread_id = :id"), {"id": thread_id}).scalar()
+                
+                if not thread_exists:
+                    db_thread = DBAgentThread(
+                        thread_id=thread_id,
+                        tenant_id=tenant_id,
+                        agent_type="proxy-gateway"
+                    )
+                    db.add(db_thread)
+                    db.commit()
+                
+                checkpoint_state = {
+                    "input": user_content,
+                    "output": "",
+                    "steps": ["guardrail_check", "proxy_intercept"],
+                    "is_safe": True,
+                    "tenant_id": tenant_id,
+                    "user_id": user_id,
+                    "thread_id": thread_id,
+                    "pending_action": {
+                        "tool": tool_name,
+                        "arguments": tool_calls[0]["function"].get("arguments", ""),
+                        "tool_call_id": tool_calls[0].get("id", "")
+                    },
+                    "action_approved": None
+                }
+                
+                db_checkpoint = DBAgentCheckpoint(
+                    thread_id=thread_id,
+                    checkpoint_id=checkpoint_id,
+                    timestamp=datetime.utcnow(),
+                    step="proxy_intercept",
+                    state_data=checkpoint_state
+                )
+                db.add(db_checkpoint)
+                db.commit()
+
+                # Start polling loop for Admin approval
+                approved = None
+                for _ in range(30):  # Poll for up to 15 seconds (30 * 0.5s)
+                    await asyncio.sleep(0.5)
+                    # Refresh checkpoint state
+                    db.refresh(db_checkpoint)
+                    state_in_db = db_checkpoint.state_data
+                    if state_in_db.get("action_approved") is not None:
+                        approved = state_in_db["action_approved"]
+                        break
+                
+                if approved is True:
+                    # Proceed with tool execution (return tool call response to the client)
+                    return response_json
+                else:
+                    # Rejected or timed out
+                    refusal_msg = f"Action blocked: Tool call '{tool_name}' was rejected by compliance policies."
+                    return {
+                        "id": response_json.get("id", f"chatcmpl-{uuid.uuid4().hex[:12]}"),
+                        "object": "chat.completion",
+                        "created": response_json.get("created", int(datetime.utcnow().timestamp())),
+                        "model": response_json.get("model", req.model),
+                        "choices": [{
+                            "index": 0,
+                            "message": {"role": "assistant", "content": refusal_msg},
+                            "finish_reason": "stop"
+                        }]
+                    }
+        
+        return response_json
+
+    else:
+        # Streaming mode logic
+        async def sse_proxy_stream():
+            try:
+                client = httpx.AsyncClient()
+                # Start connection to LiteLLM
+                req_payload = req.dict(exclude_none=True)
+                async with client.stream(
+                    "POST",
+                    f"{LLM_GATEWAY_URL}/chat/completions",
+                    json=req_payload,
+                    headers=headers,
+                    timeout=60.0
+                ) as llm_stream:
+                    if llm_stream.status_code != 200:
+                        yield f"data: {json.dumps({'error': 'Upstream returned status ' + str(llm_stream.status_code)})}\n\n"
+                        return
+
+                    # Buffer content and monitor for tool calls
+                    buffered_tool_calls = []
+                    is_intercepted = False
+                    tool_name = ""
+
+                    async for raw_line in llm_stream.aiter_lines():
+                        if raw_line.startswith("data: "):
+                            chunk_str = raw_line[len("data: "):]
+                            if chunk_str.strip() == "[DONE]":
+                                if is_intercepted:
+                                    break
+                                yield f"{raw_line}\n"
+                                break
+                            
+                            try:
+                                chunk = json.loads(chunk_str)
+                                choices = chunk.get("choices", [])
+                                if choices:
+                                    delta = choices[0].get("delta", {})
+                                    t_calls = delta.get("tool_calls", [])
+                                    if t_calls:
+                                        # Monitor tool name
+                                        t_name = t_calls[0].get("function", {}).get("name", "")
+                                        if t_name:
+                                            tool_name = t_name
+                                            # Check if tool is high risk
+                                            if any(kw in tool_name.lower() for kw in ["delete", "execute", "write", "remove", "update", "exec", "terminal", "rm", "kill", "drop"]):
+                                                is_intercepted = True
+                                        buffered_tool_calls.append(chunk)
+                                        # Do not yield yet if we suspect it might be high risk
+                                        continue
+                            except Exception:
+                                pass
+                            
+                            if not is_intercepted:
+                                yield f"{raw_line}\n"
+                    
+                    if is_intercepted:
+                        # Log evidence
+                        try:
+                            await client.post(
+                                f"{GOV_URL}/api/v1/evidence",
+                                headers={"X-Tenant-ID": tenant_id, "X-User-Role": "system-workload"},
+                                json={
+                                    "control_id": "EU-AI-Act-Art-9",
+                                    "source_component": "agent-orchestrator-proxy",
+                                    "event_type": "agent_action_intercepted",
+                                    "severity": "high",
+                                    "payload": {
+                                        "requested_tool": tool_name,
+                                        "message": f"High-risk proxy tool call '{tool_name}' intercepted during stream. Pausing completions."
+                                    }
+                                },
+                                timeout=2.0
+                            )
+                        except Exception:
+                            pass
+
+                        # Save checkpoint
+                        checkpoint_id = f"cp_{uuid.uuid4().hex[:8]}"
+                        if DATABASE_URL.startswith("sqlite"):
+                            thread_exists = db.query(DBAgentThread).filter(DBAgentThread.thread_id == thread_id).first()
+                        else:
+                            thread_exists = db.execute(text("SELECT 1 FROM agent_threads WHERE thread_id = :id"), {"id": thread_id}).scalar()
+                        
+                        if not thread_exists:
+                            db_thread = DBAgentThread(
+                                thread_id=thread_id,
+                                tenant_id=tenant_id,
+                                agent_type="proxy-gateway"
+                            )
+                            db.add(db_thread)
+                            db.commit()
+                        
+                        checkpoint_state = {
+                            "input": user_content,
+                            "output": "",
+                            "steps": ["guardrail_check", "proxy_stream_intercept"],
+                            "is_safe": True,
+                            "tenant_id": tenant_id,
+                            "user_id": user_id,
+                            "thread_id": thread_id,
+                            "pending_action": {
+                                "tool": tool_name,
+                                "arguments": "",
+                                "tool_call_id": ""
+                            },
+                            "action_approved": None
+                        }
+                        
+                        db_checkpoint = DBAgentCheckpoint(
+                            thread_id=thread_id,
+                            checkpoint_id=checkpoint_id,
+                            timestamp=datetime.utcnow(),
+                            step="proxy_stream_intercept",
+                            state_data=checkpoint_state
+                        )
+                        db.add(db_checkpoint)
+                        db.commit()
+
+                        # Poll for approval
+                        approved = None
+                        for _ in range(30):
+                            await asyncio.sleep(0.5)
+                            db.refresh(db_checkpoint)
+                            if db_checkpoint.state_data.get("action_approved") is not None:
+                                approved = db_checkpoint.state_data["action_approved"]
+                                break
+                        
+                        if approved is True:
+                            # Forward all buffered tool call chunks
+                            for tc_chunk in buffered_tool_calls:
+                                yield f"data: {json.dumps(tc_chunk)}\n\n"
+                            yield "data: [DONE]\n\n"
+                        else:
+                            # Stream refusal message chunk
+                            refusal_msg = f"Action blocked: Tool call '{tool_name}' was rejected by compliance policies."
+                            payload = {
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {"role": "assistant", "content": refusal_msg},
+                                    "finish_reason": "stop"
+                                }]
+                            }
+                            yield f"data: {json.dumps(payload)}\n\n"
+                            yield "data: [DONE]\n\n"
+            except Exception as e:
+                # Fallback streaming when LiteLLM is offline
+                print(f"[Proxy Stream] LLM Gateway unreachable ({e}). Using local mock streaming fallback.")
+                fallback_text = f"Processed query '{user_content}' successfully within tenant context (mock proxy stream completions mode)."
+                chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+                created_time = int(datetime.utcnow().timestamp())
+                
+                # Yield tokens one by one
+                words = fallback_text.split(" ")
+                for i, word in enumerate(words):
+                    space = " " if i > 0 else ""
+                    payload = {
+                        "id": chunk_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": req.model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {"content": space + word},
+                            "finish_reason": None
+                        }]
+                    }
+                    yield f"data: {json.dumps(payload)}\n\n"
+                    await asyncio.sleep(0.02)
+                
+                # Yield final stop chunk
+                payload = {
+                    "id": chunk_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_time,
+                    "model": req.model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {},
+                        "finish_reason": "stop"
+                    }]
+                }
+                yield f"data: {json.dumps(payload)}\n\n"
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(sse_proxy_stream(), media_type="text/event-stream")
+

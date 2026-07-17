@@ -115,14 +115,6 @@ class ComplianceStatusResponse(BaseModel):
     overall_compliance_score: float
     controls: List[ControlStatus]
 
-# --- Database Session Dependency ---
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 # --- JWT JWKS Cache (shared with orchestrator pattern) ---
 _gov_jwks_cache: Optional[Dict] = None
 _gov_jwks_fetched_at: Optional[datetime] = None
@@ -195,6 +187,37 @@ def get_principal(
         "tenant_id": x_tenant_id,
         "auth_method": "header"
     }
+
+# --- Database Session Dependency ---
+def get_db(principal: Dict[str, Any] = Depends(get_principal)):
+    db = SessionLocal()
+    tenant_id = principal.get("tenant_id", "default")
+    if not DATABASE_URL.startswith("sqlite") and tenant_id:
+        schema_name = f"tenant_{tenant_id.replace('-', '_')}"
+        try:
+            db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema_name};"))
+            db.execute(text(f"SET search_path TO {schema_name}, public;"))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS compliance_evidence (
+                    evidence_id VARCHAR(36) PRIMARY KEY,
+                    tenant_id VARCHAR(64) NOT NULL,
+                    control_id VARCHAR(100) NOT NULL,
+                    source_component VARCHAR(100) NOT NULL,
+                    event_type VARCHAR(100) NOT NULL,
+                    severity VARCHAR(20) NOT NULL,
+                    payload JSON NOT NULL,
+                    minio_object_path VARCHAR(512),
+                    created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT timezone('utc'::text, now())
+                );
+            """))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            print(f"[Database] Error setting up schema/tables: {e}")
+    try:
+        yield db
+    finally:
+        db.close()
 
 # --- Cerbos Authz Verification ---
 def is_authorized(principal: Dict[str, Any], resource_kind: str, resource_id: str, action: str, resource_attr: Dict[str, Any]) -> bool:

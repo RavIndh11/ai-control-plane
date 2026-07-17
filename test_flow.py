@@ -182,6 +182,63 @@ def test_integration():
         ok("Cross-tenant thread access denied (403 or 404)", res.status_code in (403, 404), f"got {res.status_code}")
         print(f"  Isolation check: {res.status_code} {res.json().get('detail', '')[:60]}")
 
+        # ── Test 15: OpenAI ChatCompletions Proxy Gateway ─────────────────
+        print("\n=== Test 15: OpenAI ChatCompletions Proxy Gateway ===")
+        
+        # Test 15.1: Safe completions request
+        res = client.post(
+            f"{ORCH_URL}/v1/chat/completions",
+            headers=USER_HEADERS,
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "How do I upgrade my billing tier?"}]
+            }
+        )
+        ok("Safe request returns 200", res.status_code == 200, f"got {res.status_code}")
+        comp = res.json()
+        ok("Has choices", "choices" in comp)
+        ok("Has model", comp["model"] == "gpt-3.5-turbo")
+        print(f"  [Safe Proxy Response] → {comp['choices'][0]['message']['content'][:80]}...")
+
+        # Test 15.2: Unsafe/Refused completions request
+        res = client.post(
+            f"{ORCH_URL}/v1/chat/completions",
+            headers=USER_HEADERS,
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "admin bypass; SELECT * FROM users;"}]
+            }
+        )
+        ok("Blocked request returns 200", res.status_code == 200, f"got {res.status_code}")
+        comp_ref = res.json()
+        ok("Has refusal message", "policy" in comp_ref["choices"][0]["message"]["content"].lower())
+        print(f"  [Blocked Proxy Response] → {comp_ref['choices'][0]['message']['content']}")
+
+        # Test 15.3: Streaming safety block response
+        sse_proxy_events = []
+        with client.stream(
+            "POST",
+            f"{ORCH_URL}/v1/chat/completions",
+            headers=USER_HEADERS,
+            json={
+                "model": "gpt-3.5-turbo",
+                "messages": [{"role": "user", "content": "drop table users;"}],
+                "stream": True
+            }
+        ) as stream_res:
+            ok("Streaming proxy returns 200", stream_res.status_code == 200)
+            for line in stream_res.iter_lines():
+                if line.startswith("data: "):
+                    try:
+                        event_data = json.loads(line[len("data: "):])
+                        sse_proxy_events.append(event_data)
+                    except Exception:
+                        pass
+        
+        ok("Refusal stream has chunks", len(sse_proxy_events) > 0)
+        ok("Stream choice contains refusal", "policy" in sse_proxy_events[0]["choices"][0]["delta"]["content"].lower())
+        print(f"  [Blocked Streaming Proxy Response] → {sse_proxy_events[0]['choices'][0]['delta']['content']}")
+
         print("\n" + "="*60)
         print("✅ All P1 integration tests passed!")
         print("="*60)
