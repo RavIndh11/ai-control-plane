@@ -11,22 +11,46 @@ image:
 # Mount the LiteLLM config file
 config: |
   model_list:
-    - model_name: llama2
+    # ── Primary chat model: CPU-optimised Mistral ──────────────────────────
+    - model_name: mistral-cpu
       litellm_params:
-        model: ollama/llama2
+        model: ollama/steamdj/mistral-cpu-only:latest
         api_base: http://ollama.control-plane.svc.cluster.local:11434
         tpm: 100000
-        rpm: 1000
-    - model_name: gpt-3.5-turbo
+        rpm: 60
+
+    # ── Fallback chat model: CPU-optimised LLaMA 3.1 ──────────────────────
+    - model_name: llama3.1-cpu
       litellm_params:
-        model: openai/gpt-3.5-turbo
-        api_key: os.environ/OPENAI_API_KEY
-        
+        model: ollama/steamdj/llama3.1-cpu-only:latest
+        api_base: http://ollama.control-plane.svc.cluster.local:11434
+        tpm: 100000
+        rpm: 40
+
+    # ── Embedding model: Qwen3 4B (for RAG context search) ────────────────
+    - model_name: qwen3-embedding
+      litellm_params:
+        model: ollama/qwen3-embedding:4b
+        api_base: http://ollama.control-plane.svc.cluster.local:11434
+        # Map to OpenAI embeddings API shape
+        input_cost_per_token: 0
+        output_cost_per_token: 0
+
+  router_settings:
+    routing_strategy: least-busy
+    num_retries: 2
+    timeout: 60                  # CPU inference is slower — give it time
+    retry_after: 5
+
   litellm_settings:
     drop_params: true
     set_headers:
-      x-litellm-proxy: true
+      x-litellm-proxy: "true"
     telemetry: false
+    # Fallback chain: if mistral-cpu is busy, try llama3.1-cpu
+    fallbacks:
+      - mistral-cpu:
+          - llama3.1-cpu
 
 # Database configurations for tracking spend, tokens, and custom API keys
 extraEnv:
