@@ -11,6 +11,12 @@ import uuid
 from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
+try:
+    from langfuse.callback import CallbackHandler
+    _langfuse_handler = CallbackHandler()
+except Exception:
+    _langfuse_handler = None
+
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -150,6 +156,8 @@ def run_thread(
     state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
     config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
+    if _langfuse_handler:
+        config["callbacks"] = [_langfuse_handler]
     final_state  = get_graph().invoke(state_to_run, config=config)
 
     status = "completed"
@@ -215,6 +223,8 @@ async def stream_thread(
 
         loop = asyncio.get_event_loop()
         config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
+        if _langfuse_handler:
+            config["callbacks"] = [_langfuse_handler]
 
         try:
             intermediate_state = await loop.run_in_executor(
