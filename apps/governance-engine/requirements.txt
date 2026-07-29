@@ -8,3 +8,4 @@ python-jose[cryptography]
 opentelemetry-sdk
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-fastapi
+fpdf2

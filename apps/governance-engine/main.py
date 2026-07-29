@@ -9,6 +9,7 @@ Key changes over original:
   5. Auth, DB, and Cerbos logic unchanged from original — only additive changes
 """
 from fastapi import FastAPI, HTTPException, Header, Depends, Request, BackgroundTasks
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Literal, Optional
 import uuid
@@ -22,6 +23,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
 
 import httpx
+
+try:
+    from fpdf import FPDF
+    HAS_FPDF = True
+except ImportError:
+    HAS_FPDF = False
 
 # --- JWT Auth ---
 try:
@@ -703,3 +710,49 @@ def get_topology(principal: Dict[str, Any] = Depends(get_principal), db: Session
         TopologyLink(source="litellm",      target="ollama",       label="External bridge"),
     ]
     return TopologyResponse(nodes=nodes, links=links)
+
+
+@app.get("/api/v1/compliance/report/pdf")
+@observe(name="generate_pdf_report")
+def generate_pdf_report(principal: Dict[str, Any] = Depends(get_principal), db: Session = Depends(get_db)):
+    if not HAS_FPDF:
+        raise HTTPException(status_code=501, detail="fpdf2 is not installed on this server.")
+
+    tenant_id = principal["tenant_id"]
+    if not is_authorized(principal, "compliance_evidence", "report", "read", {"tenant_id": tenant_id}):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if not DATABASE_URL.startswith("sqlite"):
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+        evidences = db.query(DBComplianceEvidence).all()
+    else:
+        evidences = db.query(DBComplianceEvidence).filter(DBComplianceEvidence.tenant_id == tenant_id).all()
+
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("helvetica", size=16)
+        pdf.cell(200, 10, txt=f"Compliance Audit Report", new_x="LMARGIN", new_y="NEXT", align='C')
+        pdf.set_font("helvetica", size=14)
+        pdf.cell(200, 10, txt=f"Tenant: {tenant_id}", new_x="LMARGIN", new_y="NEXT", align='C')
+        pdf.ln(10)
+
+        pdf.set_font("helvetica", size=12)
+        pdf.cell(200, 10, txt=f"Generated at: {datetime.utcnow().isoformat()}Z", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(200, 10, txt=f"Total Auditable Events: {len(evidences)}", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(10)
+
+        for ev in evidences:
+            pdf.set_font("helvetica", "B", 10)
+            pdf.cell(0, 8, txt=f"[{ev.severity.upper()}] {ev.control_id} - {ev.event_type}", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_font("helvetica", "", 10)
+            pdf.cell(0, 8, txt=f"Date: {ev.created_at} | ID: {ev.evidence_id[:8]}", new_x="LMARGIN", new_y="NEXT")
+            pdf.multi_cell(0, 8, txt=f"Details: {json.dumps(ev.payload)}")
+            pdf.ln(5)
+
+        pdf_bytes = pdf.output()
+        return Response(content=bytes(pdf_bytes), media_type="application/pdf", headers={
+            "Content-Disposition": f"attachment; filename=compliance_report_{tenant_id}.pdf"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {e}")

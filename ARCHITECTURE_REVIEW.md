@@ -796,7 +796,7 @@ User Request (prompt injection attempt)
 - [ ] Move Garak to CI/CD pipeline (run nightly red-team scans)
 - [x] Add governance engine active policy evaluation endpoint
 - [ ] Load test multi-tenant isolation
-- [ ] Add automated compliance report generation (PDF from evidence DB)
+- [x] Add automated compliance report generation (PDF from evidence DB)
 
 ---
 
