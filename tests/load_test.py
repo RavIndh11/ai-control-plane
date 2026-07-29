@@ -1,10 +1,11 @@
+import os
 import asyncio
 import httpx
 import time
 import random
 import uuid
 
-ORCHESTRATOR_URL = "http://localhost:30081/api/v1"
+ORCHESTRATOR_URL = os.getenv("ORCHESTRATOR_URL", "http://localhost:30081/api/v1")
 TENANTS = ["manifold-finance", "stark-industries", "wayne-enterprises"]
 NUM_REQUESTS_PER_TENANT = 20
 
