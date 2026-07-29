@@ -95,10 +95,10 @@ def get_graph():
     Return the already-compiled graph.
     Raises RuntimeError if build_graph() has not been called yet.
     """
+    global _compiled_graph  # noqa: F811
     if _compiled_graph is None:
         # Fallback for unit tests: compile with in-memory checkpointer
         from langgraph.checkpoint.memory import MemorySaver
-        global _compiled_graph  # noqa: F811
         _compiled_graph = _build_workflow().compile(checkpointer=MemorySaver())
         print("[Graph] Compiled with MemorySaver (fallback).")
     return _compiled_graph
