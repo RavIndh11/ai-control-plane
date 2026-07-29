@@ -365,6 +365,8 @@ spec:
               value: "true"
             - name: CLICKHOUSE_MIGRATION_URL
               value: "clickhouse://clickhouse.${NAMESPACE}.svc.cluster.local:9000"
+            - name: CLICKHOUSE_CLUSTER_ENABLED
+              value: "false"
           readinessProbe:
             httpGet:
               path: /api/public/health
@@ -486,6 +488,8 @@ spec:
               value: "true"
             - name: CLICKHOUSE_MIGRATION_URL
               value: "clickhouse://clickhouse.${NAMESPACE}.svc.cluster.local:9000"
+            - name: CLICKHOUSE_CLUSTER_ENABLED
+              value: "false"
           resources:
             requests:
               cpu: "250m"
