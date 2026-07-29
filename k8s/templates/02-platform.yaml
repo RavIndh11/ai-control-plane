@@ -329,6 +329,10 @@ spec:
               value: "false"
             - name: PORT
               value: "3000"
+            - name: LANGFUSE_DEBUG
+              value: "true"
+            - name: LANGFUSE_LOG_LEVEL
+              value: "DEBUG"
           readinessProbe:
             httpGet:
               path: /api/public/health
