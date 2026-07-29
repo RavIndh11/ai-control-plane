@@ -64,10 +64,16 @@ def _rag_context(user_input: str, tenant_id: str) -> str:
     try:
         # Embed via LiteLLM (same gateway)
         with httpx.Client(timeout=2.0) as client:
+            from auth.litellm_keys import get_virtual_key_for_tenant
+            api_key = get_virtual_key_for_tenant(tenant_id)
             res = client.post(
                 f"{LLM_GATEWAY_URL}/embeddings",
                 json={"model": EMBEDDING_MODEL, "input": user_input},
-                headers={"X-Tenant-ID": tenant_id, "X-User-Role": "system-workload"},
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "X-Tenant-ID": tenant_id, 
+                    "X-User-Role": "system-workload"
+                },
             )
             if res.status_code != 200:
                 return ""
