@@ -1,0 +1,41 @@
+name: Garak Nightly Red-Team Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Run at 2 AM UTC every night
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  garak-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Start services using Docker Compose (Simulation)
+        run: |
+          echo "In a real environment, you would stand up the agent-orchestrator"
+          echo "and LiteLLM Gateway here using docker-compose or minikube."
+          # docker-compose -f docker-compose.ci.yml up -d
+          # sleep 30
+
+      - name: Run Garak LLM Vulnerability Scanner
+        uses: addnab/docker-run-action@v3
+        with:
+          image: ghcr.io/leondz/garak:latest
+          options: --network host
+          # In CI, we point Garak at the LiteLLM gateway for direct model testing.
+          # To test the orchestrator, we would use the REST API probe.
+          run: |
+            python -m garak \
+              --model_type rest \
+              --model_name "http://localhost:4000/v1/chat/completions" \
+              --probes promptinject,dan,tox,xss \
+              --report_prefix garak_report_nightly
+
+      - name: Upload Garak Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: garak-vulnerability-report
+          path: garak_report_nightly.*
