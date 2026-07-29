@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -26,8 +26,15 @@ router = APIRouter(tags=["threads"])
 
 # --- Pydantic models ---
 class ThreadCreate(BaseModel):
-    agent_type:    str = "customer-support-graph"
+    agent_type:    str
     initial_state: Optional[Dict[str, Any]] = None
+
+    @field_validator("agent_type")
+    @classmethod
+    def agent_type_must_not_be_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("agent_type must not be empty")
+        return v
 
 
 class ApproveActionRequest(BaseModel):

@@ -10,28 +10,57 @@ Phase 2 will replace this list with dynamic MCP tool discovery.
 """
 import json
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import httpx
 
 from agents.state import AgentState
 
-LLM_GATEWAY_URL: str = os.getenv("LLM_GATEWAY_URL", "http://localhost:4000/v1")
-LLM_MODEL: str       = os.getenv("LLM_MODEL",       "mistral-cpu")
+LLM_GATEWAY_URL: str       = os.getenv("LLM_GATEWAY_URL",       "http://localhost:4000/v1")
+LLM_MODEL: str             = os.getenv("LLM_MODEL",             "mistral-cpu")
+MCP_SERVER_URL: str        = os.getenv("MCP_SERVER_URL",        "http://mcp-server.control-plane.svc.cluster.local:8002")
+GOVERNANCE_ENGINE_URL: str = os.getenv("GOVERNANCE_ENGINE_URL", "http://localhost:8000")
 
-# Risk thresholds for AGT governance
-_RISK_BY_TOOL: Dict[str, float] = {
-    "knowledge_search":  0.05,
-    "file_reader":       0.10,
-    "web_search":        0.30,
-    "file_writer":       0.75,
-    "database_mutator":  0.80,
-    "terminal_executor": 0.95,
-}
-_DEFAULT_RISK = 0.50  # unknown tool
 
-# We will dynamically fetch tools via MCP instead of statically defining them
-AGENT_TOOLS = []
+def _get_tool_risk(tool_name: str, tenant_id: str) -> float:
+    """
+    Evaluates tool risk score by calling the Governance Engine policy evaluation endpoint.
+    Falls back to local map if Governance Engine is unreachable.
+    """
+    fallback_map = {
+        "knowledge_search":  0.05,
+        "file_reader":       0.10,
+        "web_search":        0.30,
+        "file_writer":       0.75,
+        "database_mutator":  0.80,
+        "terminal_executor": 0.95,
+    }
+    default_risk = 0.50
+
+    try:
+        payload = {
+            "action": tool_name,
+            "resource_kind": "tool",
+            "context": {"tool": tool_name, "tenant_id": tenant_id},
+        }
+        headers = {
+            "X-Tenant-ID": tenant_id,
+            "X-User-Role": "agent-orchestrator",
+        }
+        with httpx.Client(timeout=3.0) as client:
+            res = client.post(
+                f"{GOVERNANCE_ENGINE_URL}/api/v1/policies/evaluate",
+                json=payload,
+                headers=headers,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                if "risk_score" in data:
+                    return float(data["risk_score"])
+    except Exception as exc:
+        print(f"[Reasoning] Policy evaluation failed for tool '{tool_name}': {exc}")
+
+    return fallback_map.get(tool_name, default_risk)
 
 # Optional Langfuse tracing
 try:
@@ -94,7 +123,7 @@ def agent_node(state: AgentState) -> AgentState:
     # Dynamically fetch MCP tools
     async def fetch_mcp_tools():
         try:
-            async with sse_client("http://mcp-server.control-plane.svc.cluster.local:8002/sse") as streams:
+            async with sse_client(f"{MCP_SERVER_URL}/sse") as streams:
                 async with ClientSession(streams[0], streams[1]) as session:
                     await session.initialize()
                     tools_resp = await session.list_tools()
@@ -156,7 +185,7 @@ def agent_node(state: AgentState) -> AgentState:
                     except Exception:
                         tool_args = {}
 
-                    risk_score = _RISK_BY_TOOL.get(tool_name, _DEFAULT_RISK)
+                    risk_score = _get_tool_risk(tool_name, tenant_id)
 
                     state["pending_action"] = {
                         "tool":         tool_name,

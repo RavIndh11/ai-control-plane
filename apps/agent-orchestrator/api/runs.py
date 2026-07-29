@@ -27,8 +27,6 @@ from db.session     import DATABASE_URL, get_db
 
 import os
 
-QDRANT_URL: str        = os.getenv("QDRANT_URL",        "")
-QDRANT_COLLECTION: str = os.getenv("QDRANT_COLLECTION", "manifold_kb")
 LLM_GATEWAY_URL: str   = os.getenv("LLM_GATEWAY_URL",   "http://localhost:4000/v1")
 LLM_MODEL: str         = os.getenv("LLM_MODEL",         "llama2")
 

@@ -8,7 +8,7 @@ Key changes over original:
   4. Langfuse @observe decorators on all key handlers
   5. Auth, DB, and Cerbos logic unchanged from original — only additive changes
 """
-from fastapi import FastAPI, HTTPException, Header, Depends, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Literal, Optional
@@ -78,7 +78,13 @@ MINIO_ACCESS_KEY    = os.getenv("MINIO_ACCESS_KEY",   "minioadmin")
 MINIO_SECRET_KEY    = os.getenv("MINIO_SECRET_KEY",   "minioadmin")
 MINIO_BUCKET        = os.getenv("MINIO_BUCKET",       "manifold-evidence")
 ALERT_WEBHOOK_URL   = os.getenv("ALERT_WEBHOOK_URL",  "")   # Slack / Teams webhook
-AUDIT_HMAC_SECRET   = os.getenv("AUDIT_HMAC_SECRET",  "change-me-in-production").encode()
+
+_audit_secret_env = os.getenv("AUDIT_HMAC_SECRET")
+if not _audit_secret_env:
+    if not DATABASE_URL.startswith("sqlite"):
+        raise RuntimeError("AUDIT_HMAC_SECRET environment variable is required in production (non-sqlite) mode.")
+    _audit_secret_env = "dev-secret-change-in-production"
+AUDIT_HMAC_SECRET   = _audit_secret_env.encode()
 
 connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
 engine       = create_engine(DATABASE_URL, connect_args=connect_args)
@@ -362,6 +368,64 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/v1/tenants")
+def get_tenants(
+    principal: Dict[str, Any] = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    allowed_roles = {"tenant-admin", "platform-admin", "compliance-auditor"}
+    if not any(r in allowed_roles for r in principal.get("roles", [])):
+        raise HTTPException(status_code=403, detail="Unauthorized: Insufficient permissions to access tenants.")
+
+    rows = db.query(DBComplianceEvidence.tenant_id).distinct().order_by(DBComplianceEvidence.tenant_id).all()
+    tenants = [r[0] for r in rows if r[0]]
+    if not tenants and principal.get("tenant_id"):
+        tenants = [principal["tenant_id"]]
+    return {"tenants": tenants}
+
+
+@app.get("/api/v1/evidence")
+def get_evidence(
+    limit: int = 50,
+    offset: int = 0,
+    control_id: Optional[str] = None,
+    severity: Optional[str] = None,
+    principal: Dict[str, Any] = Depends(get_principal),
+    db: Session = Depends(get_db),
+):
+    allowed_roles = {"tenant-admin", "compliance-auditor"}
+    if not any(r in allowed_roles for r in principal.get("roles", [])):
+        raise HTTPException(status_code=403, detail="Unauthorized: Insufficient permissions to view evidence.")
+
+    tenant_id = principal["tenant_id"]
+    if not DATABASE_URL.startswith("sqlite"):
+        db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
+
+    query = db.query(DBComplianceEvidence).filter(DBComplianceEvidence.tenant_id == tenant_id)
+    if control_id:
+        query = query.filter(DBComplianceEvidence.control_id == control_id)
+    if severity:
+        query = query.filter(DBComplianceEvidence.severity == severity)
+
+    total = query.count()
+    rows = query.order_by(DBComplianceEvidence.created_at.desc()).offset(offset).limit(limit).all()
+
+    items = [
+        {
+            "evidence_id": str(r.evidence_id),
+            "control_id": r.control_id,
+            "source_component": r.source_component,
+            "event_type": r.event_type,
+            "severity": r.severity,
+            "payload": r.payload,
+            "minio_object_path": r.minio_object_path,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+    return {"items": items, "total": total}
 
 
 @app.post("/api/v1/evidence", response_model=EvidenceResponse, status_code=201)
