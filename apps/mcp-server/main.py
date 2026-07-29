@@ -1,12 +1,11 @@
 import os
-from contextlib import asynccontextmanager
+import logging
 from typing import Any
-
 from fastapi import FastAPI, Request
-from pydantic import BaseModel
-from mcp.server.fastapi import create_mcp_app
 import mcp.types as types
 from mcp.server import Server
+from mcp.server.sse import SseServerTransport
+from starlette.responses import JSONResponse
 
 from cerbos_client import check_tool_permission
 
@@ -46,16 +45,11 @@ async def handle_list_tools() -> list[types.Tool]:
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent]:
     """
-    Execute a tool. We assume the caller sends their identity in the request headers
-    (which we would ideally extract in the FastAPI route, but for MCP over HTTP, 
-    we simulate it by checking Cerbos with dummy data for now).
+    Execute a tool.
     """
-    # In a real implementation with MCP over SSE, you'd extract the principal from the HTTP session
-    # For demonstration, we'll use a hardcoded agent identity
     principal_id = "agent-123"
     role = "compliance-agent"
 
-    # Enforce Authorization via Cerbos
     is_allowed = await check_tool_permission(principal_id, role, name)
     if not is_allowed:
         return [
@@ -85,8 +79,26 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
         raise ValueError(f"Unknown tool: {name}")
 
 
-# Expose the MCP server via FastAPI SSE
-app = create_mcp_app(server)
+# FastAPI Application
+app = FastAPI()
+
+# SSE Transport
+sse = SseServerTransport("/messages")
+
+@app.get("/sse")
+async def handle_sse(request: Request):
+    """
+    Establish SSE connection for MCP.
+    """
+    async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+        await server.run(streams[0], streams[1], server.create_initialization_options())
+
+@app.post("/messages")
+async def handle_messages(request: Request):
+    """
+    Receive POST messages from MCP client.
+    """
+    await sse.handle_post_message(request.scope, request.receive, request._send)
 
 @app.get("/health")
 def health_check():
