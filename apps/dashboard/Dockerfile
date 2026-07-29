@@ -2,9 +2,11 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+# --legacy-peer-deps: react-scripts@5 declares peer deps for React 17/18
+# NODE_OPTIONS: webpack 4 (used by react-scripts 5) needs legacy OpenSSL on Node 20
+RUN NODE_OPTIONS=--openssl-legacy-provider npm ci --legacy-peer-deps
 COPY . .
-RUN npm run build
+RUN NODE_OPTIONS=--openssl-legacy-provider npm run build
 
 # Stage 2: Serve the React Application using Nginx
 FROM nginx:stable-alpine
