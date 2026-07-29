@@ -176,6 +176,12 @@ data:
       telemetry: false
       success_callbacks: ["langfuse"]
       failure_callbacks: ["langfuse"]
+      cache: true
+      cache_params:
+        type: redis
+        host: redis.${NAMESPACE}.svc.cluster.local
+        port: 6379
+        password: "os.environ/REDIS_PASSWORD"
       fallbacks:
         - mistral-cpu:
             - llama3.1-cpu
