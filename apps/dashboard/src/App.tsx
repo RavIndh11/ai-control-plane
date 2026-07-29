@@ -166,7 +166,7 @@ function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        setEvidenceLogs(data.logs || data);
+        setEvidenceLogs(data.items || data.logs || []);
       }
     } catch (err) {
       console.error('Failed fetching evidence logs', err);
