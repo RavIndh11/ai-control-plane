@@ -367,6 +367,8 @@ spec:
               value: "clickhouse://clickhouse.${NAMESPACE}.svc.cluster.local:9000"
             - name: CLICKHOUSE_CLUSTER_ENABLED
               value: "false"
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=1024"
           readinessProbe:
             httpGet:
               path: /api/public/health
@@ -490,6 +492,8 @@ spec:
               value: "clickhouse://clickhouse.${NAMESPACE}.svc.cluster.local:9000"
             - name: CLICKHOUSE_CLUSTER_ENABLED
               value: "false"
+            - name: NODE_OPTIONS
+              value: "--max-old-space-size=1024"
           resources:
             requests:
               cpu: "250m"
