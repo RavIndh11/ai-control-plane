@@ -22,8 +22,9 @@ from agents.nodes.generation  import generation_node
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./orchestrator.db")
 
-# Module-level graph instance (set by build_graph at startup)
+# Module-level instances
 _compiled_graph = None
+_db_connection = None
 
 
 def _route_after_guardrail(state: AgentState) -> str:
@@ -69,7 +70,7 @@ def build_graph(database_url: Optional[str] = None):
 
     Returns the compiled graph and stores it in the module-level _compiled_graph.
     """
-    global _compiled_graph
+    global _compiled_graph, _db_connection
     url = database_url or DATABASE_URL
     workflow = _build_workflow()
 
@@ -77,8 +78,8 @@ def build_graph(database_url: Optional[str] = None):
         import sqlite3
         from langgraph.checkpoint.sqlite import SqliteSaver
         db_path = url.replace("sqlite:///", "")
-        conn = sqlite3.connect(db_path, check_same_thread=False)
-        checkpointer = SqliteSaver(conn)
+        _db_connection = sqlite3.connect(db_path, check_same_thread=False)
+        checkpointer = SqliteSaver(_db_connection)
         checkpointer.setup()
         _compiled_graph = workflow.compile(checkpointer=checkpointer)
         print("[Graph] Compiled with SqliteSaver.")
@@ -86,9 +87,9 @@ def build_graph(database_url: Optional[str] = None):
     else:
         import psycopg
         from langgraph.checkpoint.postgres import PostgresSaver
-        conn = psycopg.connect(url)
-        conn.autocommit = True
-        checkpointer = PostgresSaver(conn)
+        _db_connection = psycopg.connect(url)
+        _db_connection.autocommit = True
+        checkpointer = PostgresSaver(_db_connection)
         checkpointer.setup()
         _compiled_graph = workflow.compile(checkpointer=checkpointer)
         print("[Graph] Compiled with PostgresSaver.")

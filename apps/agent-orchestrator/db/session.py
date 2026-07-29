@@ -44,7 +44,7 @@ def _seed_default_rules(db: Session) -> None:
                 db.execute(
                     text("""
                         INSERT INTO compliance_rules (rule_id, pattern, is_active, control_id)
-                        VALUES (:id, :pattern, 1, :ctrl)
+                        VALUES (:id, :pattern, TRUE, :ctrl)
                     """),
                     {"id": str(uuid.uuid4()), "pattern": pattern, "ctrl": ctrl_id},
                 )
