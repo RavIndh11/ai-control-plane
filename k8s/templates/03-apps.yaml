@@ -171,6 +171,8 @@ spec:
               value: "http://otel-collector.${NAMESPACE}.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAME
               value: "agent-orchestrator"
+            - name: LITELLM_MASTER_KEY
+              value: "sk-litellm-master-secure-pass"
           readinessProbe:
             httpGet:
               path: /health
