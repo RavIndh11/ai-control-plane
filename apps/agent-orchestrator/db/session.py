@@ -60,48 +60,57 @@ def _seed_default_rules(db: Session) -> None:
         print(f"[DB] Seeding default rules failed: {exc}")
 
 
+_initialized_schemas = set()
+
 def _setup_postgres_tenant_schema(db: Session, tenant_id: str) -> None:
     """Create per-tenant schema and tables in PostgreSQL."""
     schema = f"tenant_{tenant_id.replace('-', '_')}"
-    try:
-        db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema};"))
-        db.execute(text(f"SET search_path TO {schema}, public;"))
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS agent_threads (
-                thread_id   VARCHAR(255) PRIMARY KEY,
-                tenant_id   VARCHAR(64)  NOT NULL,
-                agent_type  VARCHAR(100) NOT NULL,
-                created_at  TIMESTAMP WITHOUT TIME ZONE
-                            DEFAULT timezone('utc'::text, now())
-            );
-        """))
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS agent_checkpoints (
-                id             SERIAL PRIMARY KEY,
-                thread_id      VARCHAR(255)
-                               REFERENCES agent_threads(thread_id)
-                               ON DELETE CASCADE,
-                checkpoint_id  VARCHAR(255) NOT NULL,
-                timestamp      TIMESTAMP WITHOUT TIME ZONE
-                               DEFAULT timezone('utc'::text, now()),
-                step           VARCHAR(100) NOT NULL,
-                state_data     JSON NOT NULL
-            );
-        """))
-        db.execute(text("""
-            CREATE TABLE IF NOT EXISTS compliance_rules (
-                rule_id    VARCHAR(36)  PRIMARY KEY,
-                pattern    VARCHAR(255) NOT NULL,
-                is_active  BOOLEAN      DEFAULT TRUE,
-                control_id VARCHAR(100) NOT NULL,
-                created_at TIMESTAMP WITHOUT TIME ZONE
-                           DEFAULT timezone('utc'::text, now())
-            );
-        """))
-        db.commit()
-    except Exception as exc:
-        db.rollback()
-        print(f"[DB] Tenant schema setup failed: {exc}")
+    
+    if schema not in _initialized_schemas:
+        try:
+            db.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema};"))
+            db.execute(text(f"SET search_path TO {schema}, public;"))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_threads (
+                    thread_id   VARCHAR(255) PRIMARY KEY,
+                    tenant_id   VARCHAR(64)  NOT NULL,
+                    agent_type  VARCHAR(100) NOT NULL,
+                    created_at  TIMESTAMP WITHOUT TIME ZONE
+                                DEFAULT timezone('utc'::text, now())
+                );
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS agent_checkpoints (
+                    id             SERIAL PRIMARY KEY,
+                    thread_id      VARCHAR(255)
+                                   REFERENCES agent_threads(thread_id)
+                                   ON DELETE CASCADE,
+                    checkpoint_id  VARCHAR(255) NOT NULL,
+                    timestamp      TIMESTAMP WITHOUT TIME ZONE
+                                   DEFAULT timezone('utc'::text, now()),
+                    step           VARCHAR(100) NOT NULL,
+                    state_data     JSON NOT NULL
+                );
+            """))
+            db.execute(text("""
+                CREATE TABLE IF NOT EXISTS compliance_rules (
+                    rule_id    VARCHAR(36)  PRIMARY KEY,
+                    pattern    VARCHAR(255) NOT NULL,
+                    is_active  BOOLEAN      DEFAULT TRUE,
+                    control_id VARCHAR(100) NOT NULL,
+                    created_at TIMESTAMP WITHOUT TIME ZONE
+                               DEFAULT timezone('utc'::text, now())
+                );
+            """))
+            db.commit()
+            _initialized_schemas.add(schema)
+        except Exception as exc:
+            db.rollback()
+            print(f"[DB] Tenant schema setup failed or raced: {exc}")
+            _initialized_schemas.add(schema) # Assume it was created by another worker
+    
+    # Always ensure search_path is set for this session's connection
+    db.execute(text(f"SET search_path TO {schema}, public;"))
 
 
 def get_db(principal: dict) -> Generator[Session, None, None]:
