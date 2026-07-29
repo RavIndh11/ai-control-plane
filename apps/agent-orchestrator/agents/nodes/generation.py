@@ -127,8 +127,12 @@ def generation_node(state: AgentState) -> AgentState:
     output = ""
     try:
         with httpx.Client(timeout=30.0) as client:
+            from auth.litellm_keys import get_virtual_key_for_tenant
+            api_key = get_virtual_key_for_tenant(tenant_id)
+            
             res = client.post(
                 f"{LLM_GATEWAY_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
                 json={
                     "model":       LLM_MODEL,
                     "messages":    messages,

@@ -789,7 +789,7 @@ User Request (prompt injection attempt)
 - [x] Add semantic similarity jailbreak detection via Qdrant
 - [x] Add output validation in `generation_node`
 - [ ] Set up Grafana Loki (replace Elastic ECK)
-- [ ] Add LiteLLM tenant virtual keys
+- [x] Add LiteLLM tenant virtual keys
 - [x] Add Governance Engine alert webhooks
 
 ### Phase 5 — Production Hardening (ongoing)

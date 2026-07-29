@@ -134,8 +134,12 @@ def agent_node(state: AgentState) -> AgentState:
                 payload["tools"] = dynamic_tools
                 payload["tool_choice"] = "auto"
                 
+            from auth.litellm_keys import get_virtual_key_for_tenant
+            api_key = get_virtual_key_for_tenant(tenant_id)
+            
             res = client.post(
                 f"{LLM_GATEWAY_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
                 json=payload,
             )
 
