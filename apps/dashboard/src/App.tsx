@@ -1047,8 +1047,18 @@ function App() {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '15px' }}>
                   View LangGraph traces, generations, and evaluation scores.
                 </p>
-                <a href={`${window.location.protocol}//${window.location.hostname}:30030`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
+                <a href={`${window.location.protocol}//${window.location.hostname}:30083`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
                   Open Langfuse UI
+                </a>
+              </div>
+
+              <div className="card" style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', background: 'var(--bg-secondary)' }}>
+                <h3 style={{ marginBottom: '10px' }}>MinIO Evidence Console</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '15px' }}>
+                  S3-compatible object storage for compliance evidence artifacts.
+                </p>
+                <a href={`${window.location.protocol}//${window.location.hostname}:30090`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
+                  Open MinIO
                 </a>
               </div>
 
