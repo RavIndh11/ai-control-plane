@@ -18,3 +18,14 @@ agents:
     allowed_tools:
       - query_user_data
     risk_threshold: 0.5
+
+  - id: cloud-ops-agent
+    name: "Cloud Ops Agent"
+    description: "An intermediate level agent for testing infrastructure monitoring."
+    system_prompt: >
+      You are a Cloud Operations Agent. You can check the status of Kubernetes resources.
+      Always summarize the output of your tools clearly to the user.
+    allowed_tools:
+      - check_kubernetes_pods
+      - fetch_compliance_policy
+    risk_threshold: 0.8

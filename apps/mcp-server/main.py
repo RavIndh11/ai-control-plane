@@ -39,6 +39,17 @@ async def handle_list_tools() -> list[types.Tool]:
                 },
                 "required": ["user_id"],
             },
+        ),
+        types.Tool(
+            name="check_kubernetes_pods",
+            description="Fetch the status of pods in a specific Kubernetes namespace.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "namespace": {"type": "string"},
+                },
+                "required": ["namespace"],
+            },
         )
     ]
 
@@ -73,6 +84,15 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
             types.TextContent(
                 type="text",
                 text=f"User Data for {user_id}: Name: John Doe, Plan: Enterprise"
+            )
+        ]
+    elif name == "check_kubernetes_pods":
+        ns = arguments.get("namespace") if arguments else "default"
+        # Simulate a kubectl command for the dashboard testing
+        return [
+            types.TextContent(
+                type="text",
+                text=f"Pods in {ns}:\n- agent-orchestrator-8b5d... (Running)\n- mcp-server-578a... (Running)\n- postgres-0 (Running)"
             )
         ]
     else:

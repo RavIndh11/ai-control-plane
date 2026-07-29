@@ -503,8 +503,8 @@ function App() {
                 onChange={(e) => setAgentType(e.target.value)}
               >
                 <option value="compliance-agent">compliance-agent</option>
-                <option value="customer-support-agent">customer-support-agent</option>
                 <option value="data-analyst-agent">data-analyst-agent</option>
+                <option value="cloud-ops-agent">cloud-ops-agent</option>
               </select>
             )}
 
