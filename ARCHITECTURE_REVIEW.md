@@ -798,16 +798,30 @@ User Request (prompt injection attempt)
 - [ ] Load test multi-tenant isolation
 - [x] Add automated compliance report generation (PDF from evidence DB)
 
+### Phase 6 — Microsoft Agent Governance Toolkit (AGT) Deep Integration (2–3 weeks)
+> **Priority:** High — AGT is a core architectural component for enterprise agent accountability.
+
+- [ ] Integrate AGT SDK (`azure-ai-agent-governance`) into `governance_shield_node`
+- [ ] Map AGT `PolicySet` definitions to existing Cerbos ABAC roles (tenant-admin, compliance-auditor, etc.)
+- [ ] Implement AGT `ActionInterceptor` as a pre-execution hook in `agent_node` to enforce fine-grained tool-call policies
+- [ ] Wire AGT `AuditLogger` to emit structured events to the Governance Engine evidence DB
+- [ ] Enable AGT `RiskScorer` to replace the current manual `action_risk_score` heuristic in `governance_shield_node`
+- [ ] Expose AGT policy dashboard integration endpoint in the Governance Engine
+- [ ] Write AGT policy YAML templates for SOC2-CC-6.1, EU-AI-Act-Art-9, GDPR-Art-32 controls
+
 ---
 
 ## Final Verdict
 
-This is a **well-conceived architecture with a weak execution layer**. The design decisions (LangGraph, Cerbos, LiteLLM, Langfuse, SPIRE, Keycloak) are all correct choices for an enterprise-grade, air-gapped AI control plane. The fundamental HITL interrupt pattern and multi-tenant RLS approach are production-ready thinking.
+This is a **well-conceived architecture with a strong and growing execution layer**. The design decisions (LangGraph, Cerbos, LiteLLM, Langfuse, SPIRE, Keycloak) are all correct choices for an enterprise-grade, air-gapped AI control plane. The HITL interrupt pattern and multi-tenant RLS approach are production-ready.
 
-The execution gaps are:
-1. **MCP is a stub** — this is the most critical missing piece
-2. **The god-class orchestrator** — will block any team from working in parallel
-3. **NeMo is the wrong guardrail** for this deployment model
-4. **Governance is reactive, not proactive** — it should evaluate before action, not just log after
+Previously identified gaps — now resolved:
+1. **MCP** — ✅ Full MCP client/server with tool registry and Cerbos ABAC per-tool checks
+2. **God-class orchestrator** — ✅ Refactored into modular `agents/`, `auth/`, `authz/`, `db/`, `api/` packages
+3. **NeMo guardrails** — ✅ Replaced with Guardrails AI + Qdrant semantic jailbreak detection
+4. **Reactive governance** — ✅ Active policy evaluation endpoint + HMAC-signed evidence + alert webhooks
 
-Fix those four things and you have a genuinely enterprise-grade system.
+Remaining focus areas:
+- **Microsoft AGT integration** — the highest-value next step for enterprise accountability
+- **SPIRE SVID** — zero-trust workload identity between services
+- **CI/CD red-teaming** — Garak nightly scans
