@@ -301,7 +301,7 @@ spec:
           command: ['sh', '-c', 'until nc -z postgres.${NAMESPACE}.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done']
       containers:
         - name: langfuse
-          image: langfuse/langfuse:2.92.0
+          image: langfuse/langfuse:3.224.2
           ports:
             - containerPort: 3000
               name: http
