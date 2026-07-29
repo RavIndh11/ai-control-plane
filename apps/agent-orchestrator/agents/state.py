@@ -26,6 +26,7 @@ class AgentState(TypedDict):
     tenant_id: str
     user_id:   str
     thread_id: str
+    agent_type: str
 
     # ── AGT / Governance fields (Phase 1 additions) ──────────────────────────
     pending_action:      Optional[Dict[str, Any]]   # tool + args awaiting HITL
@@ -37,7 +38,7 @@ class AgentState(TypedDict):
     audit_hmac:          Optional[str]              # HMAC-SHA256 hex
 
 
-def empty_state(tenant_id: str, user_id: str, thread_id: str, input_text: str) -> AgentState:
+def empty_state(tenant_id: str, user_id: str, thread_id: str, input_text: str, agent_type: str = "compliance-agent") -> AgentState:
     """Return a freshly-initialised AgentState for a new run."""
     return AgentState(
         input=input_text,
@@ -47,6 +48,7 @@ def empty_state(tenant_id: str, user_id: str, thread_id: str, input_text: str) -
         tenant_id=tenant_id,
         user_id=user_id,
         thread_id=thread_id,
+        agent_type=agent_type,
         pending_action=None,
         action_approved=None,
         action_risk_score=None,

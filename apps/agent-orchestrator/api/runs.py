@@ -49,6 +49,7 @@ def _resolve_state(
     tenant_id: str,
     user_id: str,
     thread_id: str,
+    agent_type: str,
 ) -> AgentState:
     """
     Build the AgentState to pass into the graph for this run.
@@ -72,6 +73,7 @@ def _resolve_state(
             tenant_id=tenant_id,
             user_id=user_id,
             thread_id=thread_id,
+            agent_type=agent_type,
             pending_action=previous_state["pending_action"],
             action_approved=req.approve_action,
             action_risk_score=previous_state.get("action_risk_score"),
@@ -84,7 +86,7 @@ def _resolve_state(
     # ── New run ───────────────────────────────────────────────────────────────
     if not req.input:
         raise HTTPException(status_code=400, detail="Missing 'input' field.")
-    return empty_state(tenant_id, user_id, thread_id, req.input)
+    return empty_state(tenant_id, user_id, thread_id, req.input, agent_type)
 
 
 def _get_thread_or_404(thread_id: str, tenant_id: str, db: Session) -> DBAgentThread:
@@ -145,7 +147,7 @@ def run_thread(
     if not last_cp:
         raise HTTPException(status_code=500, detail="Checkpoint history missing")
 
-    state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id)
+    state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
     config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
     final_state  = get_graph().invoke(state_to_run, config=config)
@@ -202,7 +204,7 @@ async def stream_thread(
     if not last_cp:
         raise HTTPException(status_code=500, detail="Checkpoint history missing")
 
-    state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id)
+    state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
     async def event_generator() -> AsyncGenerator[str, None]:
         def sse(payload: Dict) -> str:
