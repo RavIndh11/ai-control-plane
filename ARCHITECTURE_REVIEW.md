@@ -764,25 +764,25 @@ User Request (prompt injection attempt)
 ## 8. Implementation Roadmap
 
 ### Phase 1 — Foundation Hardening (2–3 weeks)
-- [ ] Break `agent-orchestrator/main.py` into modules
+- [x] Break `agent-orchestrator/main.py` into modules
 - [ ] Wire SPIRE SVID verification between orchestrator ↔ governance engine ↔ future MCP
-- [ ] Add `@observe` Langfuse decorators to all LangGraph nodes
-- [ ] Extend `AgentState` with `action_risk_score`, `approval_chain`, `audit_hmac`
-- [ ] Add HMAC signing to Governance Engine evidence entries
+- [x] Add `@observe` Langfuse decorators to all LangGraph nodes
+- [x] Extend `AgentState` with `action_risk_score`, `approval_chain`, `audit_hmac`
+- [x] Add HMAC signing to Governance Engine evidence entries
 
 ### Phase 2 — MCP Server (3–4 weeks)
-- [ ] Build `apps/mcp-server/` with MCP protocol (JSON-RPC 2.0)
-- [ ] Implement tool registry with risk classification
-- [ ] Implement: `knowledge_search`, `file_reader`, `file_writer`, `terminal_executor`
-- [ ] Wire Cerbos ABAC per-tool checks
-- [ ] Wire MCP client in `agent_reasoning_node` to replace hardcoded `AGENT_TOOLS`
+- [x] Build `apps/mcp-server/` with MCP protocol (JSON-RPC 2.0)
+- [x] Implement tool registry with risk classification
+- [x] Implement: `knowledge_search`, `file_reader`, `file_writer`, `terminal_executor`
+- [x] Wire Cerbos ABAC per-tool checks
+- [x] Wire MCP client in `agent_reasoning_node` to replace hardcoded `AGENT_TOOLS`
 
 ### Phase 3 — Agent Catalog + AGT Enhancement (2–3 weeks)
-- [ ] Build agent catalog (YAML definitions + API)
-- [ ] Add risk scoring to `governance_shield_node`
-- [ ] Add approval chain support (multi-level HITL)
-- [ ] Add `approval_timeout_at` with auto-reject background job
-- [ ] Add break-glass override with mandatory audit
+- [x] Build agent catalog (YAML definitions + API)
+- [x] Add risk scoring to `governance_shield_node`
+- [x] Add approval chain support (multi-level HITL)
+- [x] Add `approval_timeout_at` with auto-reject background job
+- [x] Add break-glass override with mandatory audit
 
 ### Phase 4 — Guardrails Replacement + Observability (2 weeks)
 - [ ] Replace NeMo with Guardrails AI validators
@@ -790,11 +790,11 @@ User Request (prompt injection attempt)
 - [ ] Add output validation in `generation_node`
 - [ ] Set up Grafana Loki (replace Elastic ECK)
 - [ ] Add LiteLLM tenant virtual keys
-- [ ] Add Governance Engine alert webhooks
+- [x] Add Governance Engine alert webhooks
 
 ### Phase 5 — Production Hardening (ongoing)
 - [ ] Move Garak to CI/CD pipeline (run nightly red-team scans)
-- [ ] Add governance engine active policy evaluation endpoint
+- [x] Add governance engine active policy evaluation endpoint
 - [ ] Load test multi-tenant isolation
 - [ ] Add automated compliance report generation (PDF from evidence DB)
 
