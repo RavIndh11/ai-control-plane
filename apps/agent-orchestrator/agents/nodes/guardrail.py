@@ -99,6 +99,9 @@ if _HAS_GUARDRAILS:
                 print(f"[Guardrail] Qdrant jailbreak check failed: {exc}")
                 
             return Pass()
+else:
+    # Stub so references to QdrantJailbreakCheck don't raise NameError
+    QdrantJailbreakCheck = None  # type: ignore[assignment,misc]
 
 def _load_db_patterns(tenant_id: str) -> List[Tuple[str, str]]:
     """Fetch active compliance rule patterns from the DB."""

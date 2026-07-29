@@ -147,19 +147,8 @@ def generation_node(state: AgentState) -> AgentState:
             if res.status_code == 200:
                 output = res.json()["choices"][0]["message"]["content"]
                 
-                # Output Validation Layer
+                # Output Validation Layer — blocks responses containing leaked secrets
                 if _HAS_GUARDRAILS:
-                    try:
-                        # Simple regex-based or string-based output guardrail example
-                        guard = Guard().use(
-                            RegexMatch(r"(?i).*(password|secret_key|private_key).*", match_type="search"), 
-                            on_fail="exception"
-                        )
-                        # We expect validation to fail if it CONTAINS secrets. Wait, RegexMatch usually asserts the string MATCHES the regex to pass.
-                        # Actually, let's use a custom validator for secrets to be safe.
-                    except NameError:
-                        pass
-                    
                     guard = Guard().use(SecretDataCheck(), on_fail="exception")
                     guard.validate(output)
 
