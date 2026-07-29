@@ -603,7 +603,7 @@ spec:
   selector:
     app: otel-collector
 ---
-# ── Ollama — ExternalName service pointing to the LAN Ollama machine ──────
+# ── Ollama — Endpoints service pointing to the LAN Ollama machine ───────────
 # This lets pods call http://ollama.<namespace>.svc.cluster.local:11434
 # and it resolves to the actual Ollama machine IP.
 apiVersion: v1
@@ -612,8 +612,17 @@ metadata:
   name: ollama
   namespace: ${NAMESPACE}
 spec:
-  type: ExternalName
-  externalName: "${OLLAMA_HOST_IP}"
   ports:
     - port: 11434
       targetPort: 11434
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: ollama
+  namespace: ${NAMESPACE}
+subsets:
+  - addresses:
+      - ip: "${OLLAMA_HOST_IP}"
+    ports:
+      - port: 11434
