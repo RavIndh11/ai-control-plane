@@ -94,18 +94,19 @@ function App() {
   const [pendingAction, setPendingAction] = useState<any | null>(null);
 
   // --- API Base URLs ---
-  const GOV_API = window.location.hostname === 'localhost' 
-    ? 'http://localhost:8000' 
-    : `${window.location.protocol}//${window.location.hostname}:30080`;
-  const ORCH_API = window.location.hostname === 'localhost' 
-    ? 'http://localhost:8001' 
-    : `${window.location.protocol}//${window.location.hostname}:30081`;
+  const GOV_API = process.env.REACT_APP_GOVERNANCE_URL || `${window.location.protocol}//${window.location.hostname}:30080`;
+  const ORCH_API = process.env.REACT_APP_ORCHESTRATOR_URL || `${window.location.protocol}//${window.location.hostname}:30081`;
 
   // --- Fetch Tenants ---
   useEffect(() => {
     const fetchTenants = async () => {
       try {
-        const res = await fetch(`${GOV_API}/api/v1/tenants`);
+        const res = await fetch(`${GOV_API}/api/v1/tenants`, {
+          headers: {
+            'X-Tenant-ID': 'system-admin',
+            'X-User-Role': 'platform-admin'
+          }
+        });
         if (!res.ok) throw new Error('Failed to fetch tenants');
         const data = await res.json();
         const tenantIds = data.tenants || data;
