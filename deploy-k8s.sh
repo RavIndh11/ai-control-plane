@@ -139,6 +139,13 @@ kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --timeout=1
 kubectl rollout status deployment/dashboard          -n "$NAMESPACE" --timeout=60s
 echo "  ✅ Applications ready"
 
+apply_template k8s/templates/04-observability.yaml
+echo "  ⏳ Waiting for observability stack..."
+kubectl rollout status deployment/loki -n "$NAMESPACE" --timeout=120s
+kubectl rollout status daemonset/promtail -n "$NAMESPACE" --timeout=120s
+echo "  ✅ Observability stack ready"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Run schema migration on PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────────
