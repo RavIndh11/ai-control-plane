@@ -174,6 +174,8 @@ data:
     litellm_settings:
       drop_params: true
       telemetry: false
+      success_callbacks: ["langfuse"]
+      failure_callbacks: ["langfuse"]
       fallbacks:
         - mistral-cpu:
             - llama3.1-cpu
@@ -369,6 +371,28 @@ spec:
               value: "false"
             - name: NODE_OPTIONS
               value: "--max-old-space-size=1024"
+            - name: LANGFUSE_INIT_ORG_ID
+              value: "manifold-org"
+            - name: LANGFUSE_INIT_ORG_NAME
+              value: "Manifold Finance"
+            - name: LANGFUSE_INIT_PROJECT_ID
+              value: "manifold-project"
+            - name: LANGFUSE_INIT_PROJECT_NAME
+              value: "Enterprise AI Control Plane"
+            - name: LANGFUSE_INIT_PROJECT_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: datastore-secrets
+                  key: langfuse-public-key
+            - name: LANGFUSE_INIT_PROJECT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: datastore-secrets
+                  key: langfuse-secret-key
+            - name: LANGFUSE_INIT_USER_EMAIL
+              value: "admin@manifold.finance"
+            - name: LANGFUSE_INIT_USER_PASSWORD
+              value: "Admin123!"
           readinessProbe:
             httpGet:
               path: /api/public/health
