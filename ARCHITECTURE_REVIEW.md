@@ -785,8 +785,8 @@ User Request (prompt injection attempt)
 - [x] Add break-glass override with mandatory audit
 
 ### Phase 4 — Guardrails Replacement + Observability (2 weeks)
-- [ ] Replace NeMo with Guardrails AI validators
-- [ ] Add semantic similarity jailbreak detection via Qdrant
+- [x] Replace NeMo with Guardrails AI validators
+- [x] Add semantic similarity jailbreak detection via Qdrant
 - [ ] Add output validation in `generation_node`
 - [ ] Set up Grafana Loki (replace Elastic ECK)
 - [ ] Add LiteLLM tenant virtual keys
