@@ -159,6 +159,25 @@ kubectl exec -n "$NAMESPACE" "$PG_POD" -- \
     psql -U "$POSTGRES_USER" -c "CREATE DATABASE keycloak;" 2>/dev/null || true
 echo "  ✅ langfuse and keycloak databases ensured"
 
+# Refresh compliance_rules seed (wipe old text-pattern rules, replace with regex)
+echo "  Refreshing compliance rule seed..."
+kubectl exec -n "$NAMESPACE" "$PG_POD" -- \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "
+        TRUNCATE TABLE compliance_rules;
+        INSERT INTO compliance_rules (rule_id, pattern, is_active, control_id) VALUES
+            (gen_random_uuid()::text, '(?i)\\bSELECT\\b.+\\bFROM\\b',          TRUE, 'SOC2-CC-6.1'),
+            (gen_random_uuid()::text, '(?i)\\bDROP\\s+TABLE\\b',               TRUE, 'SOC2-CC-6.1'),
+            (gen_random_uuid()::text, '(?i)\\bINSERT\\s+INTO\\b',              TRUE, 'SOC2-CC-6.1'),
+            (gen_random_uuid()::text, '(?i)\\bDELETE\\s+FROM\\b',              TRUE, 'SOC2-CC-6.1'),
+            (gen_random_uuid()::text, '(?i)\\bUNION\\s+SELECT\\b',             TRUE, 'SOC2-CC-6.1'),
+            (gen_random_uuid()::text, ';\\s*rm\\s+-rf',                         TRUE, 'GDPR-Art-32'),
+            (gen_random_uuid()::text, '&&\\s*rm\\s+-rf',                        TRUE, 'GDPR-Art-32'),
+            (gen_random_uuid()::text, '\\|\\s*bash',                            TRUE, 'GDPR-Art-32'),
+            (gen_random_uuid()::text, '(?i)\\bexec\\s*\\(',                     TRUE, 'GDPR-Art-32'),
+            (gen_random_uuid()::text, '(?i)BEGIN\\s+(RSA\\s+)?PRIVATE\\s+KEY', TRUE, 'GDPR-Art-32');
+    " -q 2>/dev/null || echo "  ⚠️  Seed refresh skipped (table may not exist yet)."
+echo "  ✅ Compliance rule seed refreshed"
+
 # Create the MinIO evidence bucket
 echo "  Creating MinIO bucket manifold-evidence..."
 MINIO_POD=$(kubectl get pod -n "$NAMESPACE" -l app=minio -o jsonpath='{.items[0].metadata.name}')

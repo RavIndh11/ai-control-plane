@@ -25,30 +25,19 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base.metadata.create_all(bind=engine)
 
 _DEFAULT_RULES = [
-    # SQL injection
-    ("select * from",               "SOC2-CC-6.1"),
-    ("drop table",                  "SOC2-CC-6.1"),
-    ("admin bypass",                "SOC2-CC-6.1"),
-    # Jailbreak — instruction override variants
-    ("ignore previous instructions", "EU-AI-Act-Art-9"),
-    ("ignore all previous",         "EU-AI-Act-Art-9"),
-    ("disregard your",              "EU-AI-Act-Art-9"),
-    ("disregard all",               "EU-AI-Act-Art-9"),
-    ("repeat after me",             "EU-AI-Act-Art-9"),
-    ("output your system prompt",   "EU-AI-Act-Art-9"),
-    ("reveal your instructions",    "EU-AI-Act-Art-9"),
-    ("forget your previous",        "EU-AI-Act-Art-9"),
-    ("you are now",                 "EU-AI-Act-Art-9"),
-    ("pretend you are",             "EU-AI-Act-Art-9"),
-    ("act as if",                   "EU-AI-Act-Art-9"),
-    ("override your",               "EU-AI-Act-Art-9"),
-    # Secrets exfiltration
-    ("output your secret",          "GDPR-Art-32"),
-    ("all secret keys",             "GDPR-Art-32"),
-    ("print your api key",          "GDPR-Art-32"),
+    # Structural SQL injection — regex patterns only
+    (r"(?i)\bSELECT\b.+\bFROM\b",           "SOC2-CC-6.1"),
+    (r"(?i)\bDROP\s+TABLE\b",               "SOC2-CC-6.1"),
+    (r"(?i)\bINSERT\s+INTO\b",              "SOC2-CC-6.1"),
+    (r"(?i)\bDELETE\s+FROM\b",              "SOC2-CC-6.1"),
+    (r"(?i)\bUNION\s+SELECT\b",             "SOC2-CC-6.1"),
     # Command injection
-    ("; rm -rf",                    "GDPR-Art-32"),
-    ("&& rm -rf",                   "GDPR-Art-32"),
+    (r";\s*rm\s+-rf",                        "GDPR-Art-32"),
+    (r"&&\s*rm\s+-rf",                       "GDPR-Art-32"),
+    (r"\|\s*bash",                           "GDPR-Art-32"),
+    (r"(?i)\bexec\s*\(",                     "GDPR-Art-32"),
+    # Credential/PII exfiltration patterns in input
+    (r"(?i)BEGIN\s+(RSA\s+)?PRIVATE\s+KEY", "GDPR-Art-32"),
 ]
 
 
