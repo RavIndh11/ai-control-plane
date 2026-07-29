@@ -325,6 +325,15 @@ spec:
                 secretKeyRef:
                   name: datastore-secrets
                   key: langfuse-encryption-key
+            - name: REDIS_HOST
+              value: "redis.${NAMESPACE}.svc.cluster.local"
+            - name: REDIS_PORT
+              value: "6379"
+            - name: REDIS_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: datastore-secrets
+                  key: redis-password
             - name: LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES
               value: "false"
             - name: PORT
