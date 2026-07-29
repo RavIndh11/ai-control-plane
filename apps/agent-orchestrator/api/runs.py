@@ -164,6 +164,9 @@ def run_thread(
 
     if handler:
         handler.flush()
+    if _HAS_LANGFUSE_CB:
+        import langfuse
+        langfuse.flush()
 
     status = "completed"
     if final_state.get("pending_action") is not None:
@@ -239,6 +242,9 @@ async def stream_thread(
             )
             if handler:
                 handler.flush()
+            if _HAS_LANGFUSE_CB:
+                import langfuse
+                langfuse.flush()
         except Exception as exc:
             yield sse({"event": "error", "detail": str(exc)})
             return
