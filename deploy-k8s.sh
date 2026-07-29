@@ -84,7 +84,7 @@ fi
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "── Step 4: Build & push container images ───────────────"
-for app in governance-engine agent-orchestrator dashboard; do
+for app in governance-engine agent-orchestrator dashboard mcp-server; do
     echo "  Building $app..."
     docker build -t "$REGISTRY/$app:$TAG" "apps/$app" --quiet
     echo "  Pushing $app..."
