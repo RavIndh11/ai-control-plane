@@ -116,6 +116,14 @@ app = FastAPI(
     version="2.0.0",
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 CONTROLS_DB = {
     "SOC2-CC-6.1":    {"name": "Access Control Security",   "description": "Ensure authorized access to assets and models."},
     "GDPR-Art-32":    {"name": "Security of Processing",    "description": "Implement appropriate technical controls."},
