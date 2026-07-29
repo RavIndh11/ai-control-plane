@@ -13,9 +13,9 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 try:
     from langfuse.callback import CallbackHandler
-    _langfuse_handler = CallbackHandler()
+    _HAS_LANGFUSE_CB = True
 except Exception:
-    _langfuse_handler = None
+    _HAS_LANGFUSE_CB = False
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -156,9 +156,14 @@ def run_thread(
     state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
     config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
-    if _langfuse_handler:
-        config["callbacks"] = [_langfuse_handler]
+    handler      = None
+    if _HAS_LANGFUSE_CB:
+        handler = CallbackHandler()
+        config["callbacks"] = [handler]
     final_state  = get_graph().invoke(state_to_run, config=config)
+
+    if handler:
+        handler.flush()
 
     status = "completed"
     if final_state.get("pending_action") is not None:
@@ -223,13 +228,17 @@ async def stream_thread(
 
         loop = asyncio.get_event_loop()
         config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
-        if _langfuse_handler:
-            config["callbacks"] = [_langfuse_handler]
+        handler = None
+        if _HAS_LANGFUSE_CB:
+            handler = CallbackHandler()
+            config["callbacks"] = [handler]
 
         try:
             intermediate_state = await loop.run_in_executor(
                 None, lambda: get_graph().invoke(state_to_run, config=config)
             )
+            if handler:
+                handler.flush()
         except Exception as exc:
             yield sse({"event": "error", "detail": str(exc)})
             return
