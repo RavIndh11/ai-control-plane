@@ -1,0 +1,20 @@
+agents:
+  - id: compliance-agent
+    name: "Compliance Agent"
+    description: "An agent that checks SOC2 and GDPR compliance policies."
+    system_prompt: >
+      You are the Compliance Agent. You have access to compliance policies via MCP tools.
+      Always verify data handling practices against SOC2 or GDPR standards.
+    allowed_tools:
+      - fetch_compliance_policy
+    risk_threshold: 0.2
+
+  - id: data-analyst-agent
+    name: "Data Analyst Agent"
+    description: "An agent that can query user data securely."
+    system_prompt: >
+      You are a Data Analyst Agent. You can securely look up user data.
+      You must never reveal raw personally identifiable information (PII).
+    allowed_tools:
+      - query_user_data
+    risk_threshold: 0.5

@@ -14,4 +14,6 @@ opentelemetry-sdk
 opentelemetry-exporter-otlp
 opentelemetry-instrumentation-fastapi
 psycopg-binary
-
+pyyaml
+guardrails-ai
+mcp>=1.0.0,<2.0.0
