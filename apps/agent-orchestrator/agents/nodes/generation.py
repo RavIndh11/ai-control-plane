@@ -36,6 +36,26 @@ except ImportError:
         @staticmethod
         def update_current_observation(**_: Any) -> None: pass
 
+# Optional Guardrails AI
+try:
+    from guardrails import Guard
+    from guardrails.validators import Validator, register_validator, ValidationResult, Pass, Fail
+    import re
+    _HAS_GUARDRAILS = True
+
+    @register_validator(name="secret_data_check", data_type="string")
+    class SecretDataCheck(Validator):
+        def validate(self, value: Any, metadata: dict = {}) -> ValidationResult:
+            forbidden = [r"BEGIN RSA PRIVATE KEY", r"sk-[a-zA-Z0-9]{20,}", r"AKIA[0-9A-Z]{16}"]
+            for pattern in forbidden:
+                if re.search(pattern, value):
+                    return Fail(error_message="Output contains sensitive secrets or keys.")
+            return Pass()
+
+except ImportError:
+    _HAS_GUARDRAILS = False
+
+
 
 def _rag_context(user_input: str, tenant_id: str) -> str:
     """Return a newline-joined string of top-3 Qdrant search hits, or empty string."""
@@ -122,11 +142,33 @@ def generation_node(state: AgentState) -> AgentState:
             )
             if res.status_code == 200:
                 output = res.json()["choices"][0]["message"]["content"]
+                
+                # Output Validation Layer
+                if _HAS_GUARDRAILS:
+                    try:
+                        # Simple regex-based or string-based output guardrail example
+                        guard = Guard().use(
+                            RegexMatch(r"(?i).*(password|secret_key|private_key).*", match_type="search"), 
+                            on_fail="exception"
+                        )
+                        # We expect validation to fail if it CONTAINS secrets. Wait, RegexMatch usually asserts the string MATCHES the regex to pass.
+                        # Actually, let's use a custom validator for secrets to be safe.
+                    except NameError:
+                        pass # We will define SecretDataCheck below
+                    
+                    guard = Guard().use(SecretDataCheck, on_fail="exception")
+                    guard.validate(output)
+
             else:
                 raise RuntimeError(f"Gateway status {res.status_code}")
     except Exception as exc:
-        print(f"[Generation] LLM Gateway unreachable ({exc}). Using fallback response.")
-        output = f"Processed query for tenant '{tenant_id}' successfully."
+        if "Validation failed" in str(exc) or "Guardrails" in str(type(exc).__name__):
+            print(f"[Generation] Output blocked by Guardrails: {exc}")
+            output = "Error: The generated response was blocked by output safety guardrails."
+            state["is_safe"] = False
+        else:
+            print(f"[Generation] LLM Gateway unreachable ({exc}). Using fallback response.")
+            output = f"Processed query for tenant '{tenant_id}' successfully."
 
     state["output"] = output
 
