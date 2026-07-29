@@ -145,7 +145,14 @@ def agent_node(state: AgentState) -> AgentState:
             print(f"[MCP] Failed to fetch tools: {e}")
             return []
 
-    dynamic_tools = asyncio.run(fetch_mcp_tools())
+    async def fetch_mcp_tools_with_timeout():
+        try:
+            return await asyncio.wait_for(fetch_mcp_tools(), timeout=3.0)
+        except Exception as e:
+            print(f"[MCP] Timeout or error fetching tools: {e}")
+            return []
+
+    dynamic_tools = asyncio.run(fetch_mcp_tools_with_timeout())
 
     try:
         with httpx.Client(timeout=30.0) as client:
