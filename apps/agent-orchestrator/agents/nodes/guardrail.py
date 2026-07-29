@@ -31,13 +31,30 @@ QDRANT_URL: str          = os.getenv("QDRANT_URL", "")
 QDRANT_JAILBREAK_COLLECTION = os.getenv("QDRANT_JAILBREAK_COLLECTION", "jailbreak_patterns")
 
 _STATIC_PATTERNS: List[Tuple[str, str]] = [
-    ("select * from",                "SOC2-CC-6.1"),
-    ("drop table",                   "SOC2-CC-6.1"),
-    ("admin bypass",                 "SOC2-CC-6.1"),
-    ("ignore previous instructions", "EU-AI-Act-Art-9"),
-    ("disregard your",               "EU-AI-Act-Art-9"),
-    ("repeat after me",              "EU-AI-Act-Art-9"),
-    ("; rm -rf",                     "GDPR-Art-32"),
+    # SQL injection
+    ("select * from",                  "SOC2-CC-6.1"),
+    ("drop table",                     "SOC2-CC-6.1"),
+    ("admin bypass",                   "SOC2-CC-6.1"),
+    # Jailbreak — instruction override variants
+    ("ignore previous instructions",   "EU-AI-Act-Art-9"),
+    ("ignore all previous",            "EU-AI-Act-Art-9"),
+    ("disregard your",                 "EU-AI-Act-Art-9"),
+    ("disregard all",                  "EU-AI-Act-Art-9"),
+    ("repeat after me",                "EU-AI-Act-Art-9"),
+    ("output your system prompt",      "EU-AI-Act-Art-9"),
+    ("reveal your instructions",       "EU-AI-Act-Art-9"),
+    ("forget your previous",           "EU-AI-Act-Art-9"),
+    ("you are now",                    "EU-AI-Act-Art-9"),
+    ("pretend you are",                "EU-AI-Act-Art-9"),
+    ("act as if",                      "EU-AI-Act-Art-9"),
+    ("override your",                  "EU-AI-Act-Art-9"),
+    # Secrets exfiltration
+    ("output your secret",             "GDPR-Art-32"),
+    ("all secret keys",                "GDPR-Art-32"),
+    ("print your api key",             "GDPR-Art-32"),
+    # Command injection
+    ("; rm -rf",                       "GDPR-Art-32"),
+    ("&& rm -rf",                      "GDPR-Art-32"),
 ]
 
 _qdrant_client = None

@@ -128,6 +128,11 @@ kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
 apply_template k8s/templates/03-apps.yaml
+echo "  ⏳ Rolling restart to pick up new images..."
+kubectl rollout restart deployment/governance-engine  -n "$NAMESPACE"
+kubectl rollout restart deployment/agent-orchestrator -n "$NAMESPACE"
+kubectl rollout restart deployment/dashboard          -n "$NAMESPACE"
+kubectl rollout restart deployment/mcp-server         -n "$NAMESPACE" 2>/dev/null || true
 echo "  ⏳ Waiting for application pods..."
 kubectl rollout status deployment/governance-engine  -n "$NAMESPACE" --timeout=120s
 kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --timeout=120s
