@@ -63,7 +63,7 @@ interface TopologyLink {
 
 function App() {
   // Navigation & Tenant States
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'aibom' | 'topology' | 'playground'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'aibom' | 'topology' | 'playground' | 'system-links'>('dashboard');
   const [selectedTenant, setSelectedTenant] = useState<string>('');
   const [tenants, setTenants] = useState<string[]>([]);
   const [tenantsLoading, setTenantsLoading] = useState<boolean>(true);
