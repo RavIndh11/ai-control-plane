@@ -238,10 +238,18 @@ spec:
               mountPath: /etc/litellm
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/liveliness
               port: 4000
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 5
           resources:
             requests:
               cpu: "250m"
