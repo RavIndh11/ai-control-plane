@@ -74,20 +74,25 @@ def build_graph(database_url: Optional[str] = None):
     workflow = _build_workflow()
 
     if url.startswith("sqlite"):
+        import sqlite3
         from langgraph.checkpoint.sqlite import SqliteSaver
         db_path = url.replace("sqlite:///", "")
-        with SqliteSaver.from_conn_string(db_path) as checkpointer:
-            checkpointer.setup()
-            _compiled_graph = workflow.compile(checkpointer=checkpointer)
-            print("[Graph] Compiled with SqliteSaver.")
-            return _compiled_graph
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        checkpointer = SqliteSaver(conn)
+        checkpointer.setup()
+        _compiled_graph = workflow.compile(checkpointer=checkpointer)
+        print("[Graph] Compiled with SqliteSaver.")
+        return _compiled_graph
     else:
+        import psycopg
         from langgraph.checkpoint.postgres import PostgresSaver
-        with PostgresSaver.from_conn_string(url) as checkpointer:
-            checkpointer.setup()
-            _compiled_graph = workflow.compile(checkpointer=checkpointer)
-            print("[Graph] Compiled with PostgresSaver.")
-            return _compiled_graph
+        conn = psycopg.connect(url)
+        conn.autocommit = True
+        checkpointer = PostgresSaver(conn)
+        checkpointer.setup()
+        _compiled_graph = workflow.compile(checkpointer=checkpointer)
+        print("[Graph] Compiled with PostgresSaver.")
+        return _compiled_graph
 
 
 def get_graph():

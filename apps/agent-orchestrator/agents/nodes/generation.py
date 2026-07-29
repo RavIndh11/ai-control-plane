@@ -158,9 +158,9 @@ def generation_node(state: AgentState) -> AgentState:
                         # We expect validation to fail if it CONTAINS secrets. Wait, RegexMatch usually asserts the string MATCHES the regex to pass.
                         # Actually, let's use a custom validator for secrets to be safe.
                     except NameError:
-                        pass # We will define SecretDataCheck below
+                        pass
                     
-                    guard = Guard().use(SecretDataCheck, on_fail="exception")
+                    guard = Guard().use(SecretDataCheck(), on_fail="exception")
                     guard.validate(output)
 
             else:

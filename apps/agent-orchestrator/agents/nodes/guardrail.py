@@ -187,7 +187,7 @@ def guardrail_node(state: AgentState) -> AgentState:
 
     # Layer 1: Guardrails AI (Qdrant semantic jailbreak detection)
     if _HAS_GUARDRAILS and _qdrant_client:
-        guard = Guard().use(QdrantJailbreakCheck, on_fail="exception")
+        guard = Guard().use(QdrantJailbreakCheck(), on_fail="exception")
         try:
             guard.validate(user_input, metadata={"tenant_id": tenant_id})
         except Exception as e:
