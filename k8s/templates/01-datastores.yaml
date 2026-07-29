@@ -381,7 +381,7 @@ spec:
             - name: CLICKHOUSE_USER
               value: "default"
             - name: CLICKHOUSE_PASSWORD
-              value: ""
+              value: "dummy_pass"
             - name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
               value: "1"
           volumeMounts:
