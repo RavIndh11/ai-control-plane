@@ -1,0 +1,35 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "liveNow": true,
+  "refresh": "30s",
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "Zero-Trust Infrastructure",
+  "uid": "infra-01",
+  "panels": [
+    {
+      "title": "Envoy mTLS Handshake Failures",
+      "type": "stat",
+      "datasource": "Loki",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({job=\"kubernetes-pods\", container=\"envoy\"} |= \"protocol error\" [1h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Live Envoy & SPIRE Feed",
+      "type": "logs",
+      "datasource": "Loki",
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "{job=\"kubernetes-pods\", container=~\"envoy|spire-agent|spire-server\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
