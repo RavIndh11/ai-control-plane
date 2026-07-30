@@ -127,6 +127,12 @@ kubectl rollout status deployment/cerbos        -n "$NAMESPACE" --timeout=90s
 kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
+apply_template platform/identity/spire/spire-bundle.yaml
+echo "  ⏳ Waiting for SPIRE..."
+kubectl rollout status statefulset/spire-server -n spire --timeout=120s
+kubectl rollout status daemonset/spire-agent -n spire --timeout=120s
+echo "  ✅ SPIRE Infrastructure deployed"
+
 apply_template k8s/templates/05-spire-envoy.yaml
 echo "  ✅ SPIRE Envoy configurations applied"
 
@@ -201,7 +207,10 @@ kubectl exec -n "$NAMESPACE" "$MINIO_POD" -- \
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "── Step 7: SPIRE (workload identity) ───────────────────"
-echo "  ✅ Configured Envoy Sidecars for Governance Engine and Orchestrator"
+echo "  Registering workload identities..."
+chmod +x platform/identity/spire/register-workloads.sh
+./platform/identity/spire/register-workloads.sh
+echo "  ✅ Configured Envoy Sidecars and Registered Identities"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Summary
