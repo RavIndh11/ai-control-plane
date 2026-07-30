@@ -12,10 +12,17 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 try:
-    from langfuse.callback import CallbackHandler
-    _HAS_LANGFUSE_CB = True
+    from langfuse.decorators import observe, langfuse_context
+    from langfuse import Langfuse
+    _HAS_LANGFUSE = True
 except Exception:
-    _HAS_LANGFUSE_CB = False
+    _HAS_LANGFUSE = False
+    def observe(name: str = ""):  # type: ignore
+        def decorator(fn): return fn
+        return decorator
+    class langfuse_context:  # type: ignore
+        @staticmethod
+        def update_current_observation(**_: Any) -> None: pass
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -156,17 +163,28 @@ def run_thread(
     state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
     config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
-    handler      = None
-    if _HAS_LANGFUSE_CB:
-        handler = CallbackHandler()
-        config["callbacks"] = [handler]
-    final_state  = get_graph().invoke(state_to_run, config=config)
+    if _HAS_LANGFUSE:
+        @observe(name="agent_run")
+        def _invoke_graph():
+            langfuse_context.update_current_observation(
+                input={"input": state_to_run.get("input"), "agent_type": thread.agent_type},
+                user_id=user_id,
+                session_id=thread_id,
+                metadata={"tenant_id": tenant_id, "thread_id": thread_id}
+            )
+            res = get_graph().invoke(state_to_run, config=config)
+            langfuse_context.update_current_observation(
+                output={"output": res.get("output"), "steps": res.get("steps")}
+            )
+            return res
 
-    if handler:
-        handler.flush()
-    if _HAS_LANGFUSE_CB:
-        import langfuse
-        langfuse.flush()
+        final_state = _invoke_graph()
+        try:
+            Langfuse().flush()
+        except Exception as exc:
+            print(f"[Langfuse] Flush error: {exc}")
+    else:
+        final_state = get_graph().invoke(state_to_run, config=config)
 
     status = "completed"
     if final_state.get("pending_action") is not None:
@@ -231,20 +249,31 @@ async def stream_thread(
 
         loop = asyncio.get_event_loop()
         config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
-        handler = None
-        if _HAS_LANGFUSE_CB:
-            handler = CallbackHandler()
-            config["callbacks"] = [handler]
-
         try:
-            intermediate_state = await loop.run_in_executor(
-                None, lambda: get_graph().invoke(state_to_run, config=config)
-            )
-            if handler:
-                handler.flush()
-            if _HAS_LANGFUSE_CB:
-                import langfuse
-                langfuse.flush()
+            if _HAS_LANGFUSE:
+                @observe(name="agent_run_stream")
+                def _invoke_graph_stream():
+                    langfuse_context.update_current_observation(
+                        input={"input": state_to_run.get("input"), "agent_type": thread.agent_type},
+                        user_id=user_id,
+                        session_id=thread_id,
+                        metadata={"tenant_id": tenant_id, "thread_id": thread_id}
+                    )
+                    res = get_graph().invoke(state_to_run, config=config)
+                    langfuse_context.update_current_observation(
+                        output={"output": res.get("output"), "steps": res.get("steps")}
+                    )
+                    return res
+
+                intermediate_state = await loop.run_in_executor(None, _invoke_graph_stream)
+                try:
+                    Langfuse().flush()
+                except Exception as exc:
+                    print(f"[Langfuse] Flush error: {exc}")
+            else:
+                intermediate_state = await loop.run_in_executor(
+                    None, lambda: get_graph().invoke(state_to_run, config=config)
+                )
         except Exception as exc:
             yield sse({"event": "error", "detail": str(exc)})
             return

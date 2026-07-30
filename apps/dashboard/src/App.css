@@ -547,6 +547,8 @@ body {
   border-radius: 12px;
   line-height: 1.5;
   font-size: 0.95rem;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message-bubble.user {
