@@ -1063,6 +1063,16 @@ function App() {
               </div>
 
               <div className="card" style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', background: 'var(--bg-secondary)' }}>
+                <h3 style={{ marginBottom: '10px' }}>Grafana Observability</h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '15px' }}>
+                  Centralized container logs and dashboards via Grafana Loki.
+                </p>
+                <a href={`${window.location.protocol}//${window.location.hostname}:30091`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
+                  Open Grafana
+                </a>
+              </div>
+
+              <div className="card" style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', background: 'var(--bg-secondary)' }}>
                 <h3 style={{ marginBottom: '10px' }}>Orchestrator Swagger API</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '15px' }}>
                   Interactive API documentation for the Agent Orchestrator.

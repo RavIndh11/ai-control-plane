@@ -1,0 +1,32 @@
+repo_root: .
+init_tool_version: 1.0.10
+generated_at_utc: '2026-07-30T05:32:09.171345+00:00'
+detected_languages:
+- node
+- python
+detected_build_tools:
+- npm
+- pip
+verify_commands:
+- cwd: .
+  command:
+  - python3
+  - -m
+  - pytest
+  - -q
+- cwd: .
+  command:
+  - npm
+  - test
+risk_paths:
+- .github/workflows/
+- infra/
+- k8s/
+ci_gates: []
+suggested_routing_triggers:
+- path_glob: .github/workflows/*
+  gate: ci_guard
+- path_glob: infra/*
+  gate: infra_guard
+- path_glob: k8s/*
+  gate: infra_guard

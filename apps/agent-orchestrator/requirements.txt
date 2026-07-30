@@ -19,3 +19,4 @@ pyyaml
 guardrails-ai
 mcp>=1.0.0,<2.0.0
 langfuse>=2.54.0
+agent-governance==1.0.10

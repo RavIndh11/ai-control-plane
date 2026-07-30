@@ -127,6 +127,9 @@ kubectl rollout status deployment/cerbos        -n "$NAMESPACE" --timeout=90s
 kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
+apply_template k8s/templates/05-spire-envoy.yaml
+echo "  ✅ SPIRE Envoy configurations applied"
+
 apply_template k8s/templates/03-apps.yaml
 echo "  ⏳ Rolling restart to pick up new images..."
 kubectl rollout restart deployment/governance-engine  -n "$NAMESPACE"
@@ -194,11 +197,11 @@ kubectl exec -n "$NAMESPACE" "$MINIO_POD" -- \
            echo 'Bucket ready'" || echo "  ⚠️  MinIO bucket setup skipped (mc not in image — use web UI at :30090)"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Deploy SPIRE for workload identity (Phase 2 preview — skipped for now)
+# 7. Deploy SPIRE for workload identity
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
 echo "── Step 7: SPIRE (workload identity) ───────────────────"
-echo "  ⏭️  Skipped in Phase 1 — will be enabled in Phase 2 (MCP server)"
+echo "  ✅ Configured Envoy Sidecars for Governance Engine and Orchestrator"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Summary
@@ -214,6 +217,7 @@ echo "  │  Dashboard UI:          http://$MASTER_NODE_IP:30082  │"
 echo "  │  Agent Orchestrator:    http://$MASTER_NODE_IP:30081  │"
 echo "  │  Governance Engine:     http://$MASTER_NODE_IP:30080  │"
 echo "  │  Langfuse Traces:       http://$MASTER_NODE_IP:30083  │"
+echo "  │  Grafana UI:            http://$MASTER_NODE_IP:30091  │"
 echo "  │  LiteLLM Gateway:       http://$MASTER_NODE_IP:30040  │"
 echo "  │  MinIO Console:         http://$MASTER_NODE_IP:30090  │"
 echo "  └─────────────────────────────────────────────────────┘"

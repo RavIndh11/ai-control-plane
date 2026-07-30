@@ -1,0 +1,26 @@
+name: Agent Governance Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  agent-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Agent Governance Toolkit
+        run: |
+          pip install agent-governance==1.0.10
+
+      - name: Run Agent Gate
+        run: |
+          agentctl gate pr

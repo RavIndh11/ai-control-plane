@@ -765,7 +765,7 @@ User Request (prompt injection attempt)
 
 ### Phase 1 — Foundation Hardening (2–3 weeks)
 - [x] Break `agent-orchestrator/main.py` into modules
-- [ ] Wire SPIRE SVID verification between orchestrator ↔ governance engine ↔ future MCP
+- [x] Wire SPIRE SVID verification between orchestrator ↔ governance engine ↔ future MCP
 - [x] Add `@observe` Langfuse decorators to all LangGraph nodes
 - [x] Extend `AgentState` with `action_risk_score`, `approval_chain`, `audit_hmac`
 - [x] Add HMAC signing to Governance Engine evidence entries
@@ -788,26 +788,26 @@ User Request (prompt injection attempt)
 - [x] Replace NeMo with Guardrails AI validators
 - [x] Add semantic similarity jailbreak detection via Qdrant
 - [x] Add output validation in `generation_node`
-- [ ] Set up Grafana Loki (replace Elastic ECK)
+- [x] Set up Grafana Loki (replace Elastic ECK)
 - [x] Add LiteLLM tenant virtual keys
 - [x] Add Governance Engine alert webhooks
 
 ### Phase 5 — Production Hardening (ongoing)
-- [ ] Move Garak to CI/CD pipeline (run nightly red-team scans)
+- [x] Move Garak to CI/CD pipeline (run nightly red-team scans)
 - [x] Add governance engine active policy evaluation endpoint
-- [ ] Load test multi-tenant isolation
+- [x] Load test multi-tenant isolation
 - [x] Add automated compliance report generation (PDF from evidence DB)
 
 ### Phase 6 — Microsoft Agent Governance Toolkit (AGT) Deep Integration (2–3 weeks)
 > **Priority:** High — AGT is a core architectural component for enterprise agent accountability.
 
-- [ ] Integrate AGT SDK (`azure-ai-agent-governance`) into `governance_shield_node`
-- [ ] Map AGT `PolicySet` definitions to existing Cerbos ABAC roles (tenant-admin, compliance-auditor, etc.)
-- [ ] Implement AGT `ActionInterceptor` as a pre-execution hook in `agent_node` to enforce fine-grained tool-call policies
-- [ ] Wire AGT `AuditLogger` to emit structured events to the Governance Engine evidence DB
-- [ ] Enable AGT `RiskScorer` to replace the current manual `action_risk_score` heuristic in `governance_shield_node`
-- [ ] Expose AGT policy dashboard integration endpoint in the Governance Engine
-- [ ] Write AGT policy YAML templates for SOC2-CC-6.1, EU-AI-Act-Art-9, GDPR-Art-32 controls
+- [x] Integrate AGT SDK (`azure-ai-agent-governance`) into `governance_shield_node`
+- [x] Map AGT `PolicySet` definitions to existing Cerbos ABAC roles (tenant-admin, compliance-auditor, etc.)
+- [x] Implement AGT `ActionInterceptor` as a pre-execution hook in `agent_node` to enforce fine-grained tool-call policies
+- [x] Wire AGT `AuditLogger` to emit structured events to the Governance Engine evidence DB
+- [x] Enable AGT `RiskScorer` to replace the current manual `action_risk_score` heuristic in `governance_shield_node`
+- [x] Expose AGT policy dashboard integration endpoint in the Governance Engine
+- [x] Write AGT policy YAML templates for SOC2-CC-6.1, EU-AI-Act-Art-9, GDPR-Art-32 controls
 
 ---
 

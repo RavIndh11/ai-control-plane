@@ -27,6 +27,20 @@ spec:
           image: busybox:1.36
           command: ['sh', '-c', 'until nc -z postgres.${NAMESPACE}.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done']
       containers:
+        - name: envoy
+          image: envoyproxy/envoy:v1.27.0
+          args:
+            - "-c"
+            - "/etc/envoy/envoy.yaml"
+          ports:
+            - containerPort: 8443
+              name: https
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /etc/envoy
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+              readOnly: true
         - name: governance-engine
           image: ${REGISTRY}/governance-engine:${TAG}
           imagePullPolicy: Always
@@ -83,6 +97,14 @@ spec:
             limits:
               cpu: "1"
               memory: "768Mi"
+      volumes:
+        - name: envoy-config
+          configMap:
+            name: envoy-config-gov
+        - name: spire-agent-socket
+          hostPath:
+            path: /run/spire/sockets
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -92,8 +114,8 @@ metadata:
 spec:
   type: NodePort
   ports:
-    - port: 8000
-      targetPort: 8000
+    - port: 8443
+      targetPort: 8443
       nodePort: 30080
   selector:
     app: governance-engine
@@ -125,6 +147,20 @@ spec:
           image: busybox:1.36
           command: ['sh', '-c', 'until nc -z governance-engine.${NAMESPACE}.svc.cluster.local 8000; do echo waiting for governance-engine; sleep 3; done']
       containers:
+        - name: envoy
+          image: envoyproxy/envoy:v1.27.0
+          args:
+            - "-c"
+            - "/etc/envoy/envoy.yaml"
+          ports:
+            - containerPort: 8000
+              name: envoy-proxy
+          volumeMounts:
+            - name: envoy-config
+              mountPath: /etc/envoy
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+              readOnly: true
         - name: agent-orchestrator
           image: ${REGISTRY}/agent-orchestrator:${TAG}
           imagePullPolicy: Always
@@ -135,7 +171,7 @@ spec:
             - name: DATABASE_URL
               value: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres.${NAMESPACE}.svc.cluster.local:5432/${POSTGRES_DB}"
             - name: GOVERNANCE_ENGINE_URL
-              value: "http://governance-engine.${NAMESPACE}.svc.cluster.local:8000"
+              value: "http://127.0.0.1:8000"
             - name: LLM_GATEWAY_URL
               value: "http://litellm.${NAMESPACE}.svc.cluster.local:4000/v1"
             - name: LLM_MODEL
@@ -186,6 +222,14 @@ spec:
             limits:
               cpu: "2"
               memory: "1.5Gi"
+      volumes:
+        - name: envoy-config
+          configMap:
+            name: envoy-config-orchestrator
+        - name: spire-agent-socket
+          hostPath:
+            path: /run/spire/sockets
+            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service

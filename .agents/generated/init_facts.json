@@ -1,0 +1,92 @@
+{
+  "facts": [
+    {
+      "fact_type": "detected_build_tool",
+      "source": {
+        "line_end": 1,
+        "line_start": 1,
+        "path": "apps/agent-orchestrator/requirements.txt"
+      },
+      "value": "pip"
+    },
+    {
+      "fact_type": "detected_build_tool",
+      "source": {
+        "line_end": 20,
+        "line_start": 20,
+        "path": "apps/dashboard/package.json"
+      },
+      "value": "npm"
+    },
+    {
+      "fact_type": "detected_node_script",
+      "source": {
+        "line_end": 23,
+        "line_start": 23,
+        "path": "apps/dashboard/package.json"
+      },
+      "value": "test"
+    },
+    {
+      "fact_type": "risk_path",
+      "source": {
+        "line_end": 1,
+        "line_start": 1,
+        "path": "infra/cluster/main.tf"
+      },
+      "value": "infra/"
+    },
+    {
+      "fact_type": "risk_path",
+      "source": {
+        "line_end": 1,
+        "line_start": 1,
+        "path": "k8s/templates/00-namespace-and-secrets.yaml"
+      },
+      "value": "k8s/"
+    },
+    {
+      "fact_type": "risk_path",
+      "source": {
+        "line_end": 1,
+        "line_start": 1,
+        "path": ".github/workflows/garak-scan.yml"
+      },
+      "value": ".github/workflows/"
+    },
+    {
+      "fact_type": "verify_command",
+      "source": {
+        "line_end": 1,
+        "line_start": 1,
+        "path": "apps/agent-orchestrator/requirements.txt"
+      },
+      "value": {
+        "command": [
+          "python3",
+          "-m",
+          "pytest",
+          "-q"
+        ],
+        "cwd": "."
+      }
+    },
+    {
+      "fact_type": "verify_command",
+      "source": {
+        "line_end": 23,
+        "line_start": 23,
+        "path": "apps/dashboard/package.json"
+      },
+      "value": {
+        "command": [
+          "npm",
+          "test"
+        ],
+        "cwd": "."
+      }
+    }
+  ],
+  "generated_at_utc": "2026-07-30T05:32:09.171345+00:00",
+  "init_tool_version": "1.0.10"
+}
