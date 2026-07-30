@@ -156,8 +156,18 @@ kubectl rollout restart deployment/agent-orchestrator -n "$NAMESPACE"
 kubectl rollout restart deployment/dashboard          -n "$NAMESPACE"
 kubectl rollout restart deployment/mcp-server         -n "$NAMESPACE" 2>/dev/null || true
 echo "  ⏳ Waiting for application pods..."
-kubectl rollout status deployment/governance-engine  -n "$NAMESPACE" --timeout=120s
-kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --timeout=120s
+if ! kubectl rollout status deployment/governance-engine  -n "$NAMESPACE" --timeout=120s; then
+    echo "❌ Governance Engine failed to roll out! Diagnostics:"
+    kubectl describe pod -l app=governance-engine -n "$NAMESPACE"
+    kubectl logs -l app=governance-engine -n "$NAMESPACE" --all-containers
+    exit 1
+fi
+if ! kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --timeout=120s; then
+    echo "❌ Agent Orchestrator failed to roll out! Diagnostics:"
+    kubectl describe pod -l app=agent-orchestrator -n "$NAMESPACE"
+    kubectl logs -l app=agent-orchestrator -n "$NAMESPACE" --all-containers
+    exit 1
+fi
 kubectl rollout status deployment/dashboard          -n "$NAMESPACE" --timeout=60s
 echo "  ✅ Applications ready"
 
