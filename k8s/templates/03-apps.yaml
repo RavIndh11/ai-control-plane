@@ -116,7 +116,11 @@ spec:
   ports:
     - port: 8443
       targetPort: 8443
+      name: mtls
+    - port: 8000
+      targetPort: 8000
       nodePort: 30080
+      name: http
   selector:
     app: governance-engine
 ---

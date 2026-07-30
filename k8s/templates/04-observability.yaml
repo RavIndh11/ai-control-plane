@@ -159,6 +159,22 @@ spec:
 
 # ── Grafana ──────────────────────────────────────────────────────────────
 ---
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: ${NAMESPACE}
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.${NAMESPACE}.svc.cluster.local:3100
+        isDefault: true
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -182,6 +198,13 @@ spec:
           ports:
             - containerPort: 3000
               name: http
+          volumeMounts:
+            - name: grafana-datasources
+              mountPath: /etc/grafana/provisioning/datasources
+      volumes:
+        - name: grafana-datasources
+          configMap:
+            name: grafana-datasources
 ---
 apiVersion: v1
 kind: Service
