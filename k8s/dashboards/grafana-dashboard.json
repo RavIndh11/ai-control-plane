@@ -1,0 +1,112 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "title": "Log Volume by Container",
+      "type": "timeseries",
+      "datasource": "Loki",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (container) (rate({container=~\"$container\"} [1m]))",
+          "refId": "A",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    },
+    {
+      "title": "Errors / Warnings Rate",
+      "type": "timeseries",
+      "datasource": "Loki",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum by (container) (rate({container=~\"$container\"} |=~ \"(?i)error|warn|fatal|failed|exception\" [1m]))",
+          "refId": "A",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    },
+    {
+      "title": "Governance Guardrail Interceptions (Blocked Actions)",
+      "type": "stat",
+      "datasource": "Loki",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=~\"governance-engine.*\"} |= \"violation detected\" [1h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "mTLS / Envoy Handshake Failures",
+      "type": "stat",
+      "datasource": "Loki",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=\"envoy\"} |= \"protocol error\" [1h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Agent Thread Sessions Created",
+      "type": "stat",
+      "datasource": "Loki",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 8 },
+      "targets": [
+        {
+          "expr": "sum(count_over_time({container=~\"agent-orchestrator.*\"} |= \"Thread session initialized\" [1h]))",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Live Log Feed",
+      "type": "logs",
+      "datasource": "Loki",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 13 },
+      "targets": [
+        {
+          "expr": "{container=~\"$container\"}",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["ai-control-plane", "zero-trust"],
+  "templating": {
+    "list": [
+      {
+        "name": "container",
+        "type": "query",
+        "datasource": "Loki",
+        "query": "label_values(container)",
+        "refresh": 1,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "AI Control Plane God's-Eye View",
+  "uid": "ai-cp-01",
+  "version": 1
+}
