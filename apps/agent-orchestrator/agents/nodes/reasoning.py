@@ -64,20 +64,20 @@ def _get_tool_risk(tool_name: str, tenant_id: str) -> float:
 
 # Optional Langfuse tracing
 try:
-    from langfuse.decorators import observe, langfuse_context
+    from langfuse import observe, langfuse_context
     _HAS_LANGFUSE = True
 except ImportError:
-    _HAS_LANGFUSE = False
-
-    def observe(name: str = ""):  # type: ignore[misc]
-        def decorator(fn):
-            return fn
-        return decorator
-
-    class langfuse_context:  # type: ignore[no-redef]
-        @staticmethod
-        def update_current_observation(**_: Any) -> None:
-            pass
+    try:
+        from langfuse.decorators import observe, langfuse_context
+        _HAS_LANGFUSE = True
+    except ImportError:
+        _HAS_LANGFUSE = False
+        def observe(name: str = ""):  # type: ignore[misc]
+            def decorator(fn): return fn
+            return decorator
+        class langfuse_context:  # type: ignore[no-redef]
+            @staticmethod
+            def update_current_observation(**_: Any) -> None: pass
 
 
 @observe(name="agent_reasoning_node")

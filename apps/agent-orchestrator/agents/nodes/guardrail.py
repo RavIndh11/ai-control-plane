@@ -124,15 +124,17 @@ if QDRANT_URL:
 
 # ── Optional Langfuse tracing ─────────────────────────────────────────────────
 try:
-    from langfuse.decorators import observe, langfuse_context
+    from langfuse import observe, langfuse_context
 except ImportError:
-    def observe(name: str = ""):  # type: ignore[misc]
-        def decorator(fn): return fn
-        return decorator
-
-    class langfuse_context:  # type: ignore[no-redef]
-        @staticmethod
-        def update_current_observation(**_: Any) -> None:
+    try:
+        from langfuse.decorators import observe, langfuse_context
+    except ImportError:
+        def observe(name: str = ""):  # type: ignore[misc]
+            def decorator(fn): return fn
+            return decorator
+        class langfuse_context:  # type: ignore[no-redef]
+            @staticmethod
+            def update_current_observation(**_: Any) -> None: pass
             pass
 
 

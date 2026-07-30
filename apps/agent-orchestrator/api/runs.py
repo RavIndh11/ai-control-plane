@@ -12,17 +12,21 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 try:
-    from langfuse.decorators import observe, langfuse_context
-    from langfuse import Langfuse
+    from langfuse import observe, langfuse_context, Langfuse
     _HAS_LANGFUSE = True
 except Exception:
-    _HAS_LANGFUSE = False
-    def observe(name: str = ""):  # type: ignore
-        def decorator(fn): return fn
-        return decorator
-    class langfuse_context:  # type: ignore
-        @staticmethod
-        def update_current_observation(**_: Any) -> None: pass
+    try:
+        from langfuse.decorators import observe, langfuse_context
+        from langfuse import Langfuse
+        _HAS_LANGFUSE = True
+    except Exception:
+        _HAS_LANGFUSE = False
+        def observe(name: str = ""):  # type: ignore
+            def decorator(fn): return fn
+            return decorator
+        class langfuse_context:  # type: ignore
+            @staticmethod
+            def update_current_observation(**_: Any) -> None: pass
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
