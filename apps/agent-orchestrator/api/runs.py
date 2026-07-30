@@ -40,6 +40,11 @@ from db.session     import DATABASE_URL, get_db
 
 import os
 
+for k in ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"]:
+    v = os.getenv(k)
+    if v:
+        os.environ[k] = v.strip("\"' \t\n\r")
+
 LLM_GATEWAY_URL: str   = os.getenv("LLM_GATEWAY_URL",   "http://localhost:4000/v1")
 LLM_MODEL: str         = os.getenv("LLM_MODEL",         "llama2")
 
