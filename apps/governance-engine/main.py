@@ -56,20 +56,17 @@ except Exception:
 
 # --- Langfuse (optional) ---
 try:
-    from langfuse import observe, langfuse_context
+    from langfuse import observe
     HAS_LANGFUSE = True
-except ImportError:
-    try:
-        from langfuse.decorators import observe, langfuse_context
-        HAS_LANGFUSE = True
-    except ImportError:
-        HAS_LANGFUSE = False
-        def observe(name: str = ""):  # type: ignore
-            def decorator(fn): return fn
-            return decorator
-        class langfuse_context:  # type: ignore
-            @staticmethod
-            def update_current_observation(**_: Any) -> None: pass
+except Exception:
+    HAS_LANGFUSE = False
+    def observe(name: str = ""):  # type: ignore
+        def decorator(fn): return fn
+        return decorator
+
+class langfuse_context:  # type: ignore
+    @staticmethod
+    def update_current_observation(**_: Any) -> None: pass
 
 # --- Configuration ---
 DATABASE_URL        = os.getenv("DATABASE_URL", "sqlite:///./governance.db")

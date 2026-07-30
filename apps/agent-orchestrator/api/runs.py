@@ -12,21 +12,22 @@ from datetime import datetime
 from typing import Any, AsyncGenerator, Dict, Optional
 
 try:
-    from langfuse import observe, langfuse_context, Langfuse
+    from langfuse import observe, get_client, propagate_attributes
     _HAS_LANGFUSE = True
 except Exception:
     try:
         from langfuse.decorators import observe, langfuse_context
-        from langfuse import Langfuse
         _HAS_LANGFUSE = True
     except Exception:
         _HAS_LANGFUSE = False
         def observe(name: str = ""):  # type: ignore
             def decorator(fn): return fn
             return decorator
-        class langfuse_context:  # type: ignore
-            @staticmethod
-            def update_current_observation(**_: Any) -> None: pass
+        class propagate_attributes:  # type: ignore
+            def __init__(self, **kwargs): pass
+            def __enter__(self): pass
+            def __exit__(self, *args): pass
+
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -152,18 +153,7 @@ def _save_checkpoint(db: Session, thread_id: str, step: str, state: dict) -> str
 if _HAS_LANGFUSE:
     @observe(name="agent_run")
     def _execute_agent_run(state_to_run: dict, config: dict, tenant_id: str, user_id: str, thread_id: str, agent_type: str) -> dict:
-        langfuse_context.update_current_observation(
-            input={"input": state_to_run.get("input"), "agent_type": agent_type},
-            metadata={"tenant_id": tenant_id, "thread_id": thread_id, "user_id": user_id, "session_id": thread_id}
-        )
-        try:
-            langfuse_context.update_current_trace(user_id=user_id, session_id=thread_id)
-        except Exception:
-            pass
         res = get_graph().invoke(state_to_run, config=config)
-        langfuse_context.update_current_observation(
-            output={"output": res.get("output"), "steps": res.get("steps")}
-        )
         return res
 
 
@@ -202,7 +192,8 @@ def run_thread(
 
     config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
     if _HAS_LANGFUSE:
-        final_state = _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
+        with propagate_attributes(user_id=user_id, session_id=thread_id, metadata={"tenant_id": tenant_id}):
+            final_state = _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
         _flush_langfuse()
     else:
         final_state = get_graph().invoke(state_to_run, config=config)
@@ -272,10 +263,10 @@ async def stream_thread(
         config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
         try:
             if _HAS_LANGFUSE:
-                intermediate_state = await loop.run_in_executor(
-                    None, 
-                    lambda: _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
-                )
+                def _run_with_attrs():
+                    with propagate_attributes(user_id=user_id, session_id=thread_id, metadata={"tenant_id": tenant_id}):
+                        return _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
+                intermediate_state = await loop.run_in_executor(None, _run_with_attrs)
                 _flush_langfuse()
             else:
                 intermediate_state = await loop.run_in_executor(
