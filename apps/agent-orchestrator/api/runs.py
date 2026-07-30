@@ -51,16 +51,14 @@ for k in ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"]:
 
 
 def _flush_langfuse():
-    pk = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip("\"' \t\n\r")
-    sk = os.getenv("LANGFUSE_SECRET_KEY", "").strip("\"' \t\n\r")
-    host = os.getenv("LANGFUSE_HOST", "http://langfuse.control-plane.svc.cluster.local:3000").strip("\"' \t\n\r")
-    if pk and sk:
+    try:
+        from langfuse import Langfuse, get_client
         try:
-            from langfuse import Langfuse
-            lf = Langfuse(public_key=pk, secret_key=sk, host=host)
-            lf.flush()
-        except Exception as exc:
-            print(f"[Langfuse] Explicit flush error: {exc}")
+            get_client().flush()
+        except Exception:
+            Langfuse().flush()
+    except Exception as exc:
+        print(f"[Langfuse] Explicit flush error: {exc}")
 
 LLM_GATEWAY_URL: str   = os.getenv("LLM_GATEWAY_URL",   "http://localhost:4000/v1")
 LLM_MODEL: str         = os.getenv("LLM_MODEL",         "llama2")
