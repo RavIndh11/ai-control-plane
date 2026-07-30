@@ -174,7 +174,6 @@ data:
       server_address = "spire-server.spire.svc.cluster.local"
       server_port = "8081"
       socket_path = "/run/spire/sockets/agent.sock"
-      trust_bundle_path = "/run/spire/bundle.crt"
       trust_domain = "control-plane.local"
       insecure_bootstrap = true
     }
