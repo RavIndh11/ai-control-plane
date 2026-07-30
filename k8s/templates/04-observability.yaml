@@ -145,6 +145,9 @@ spec:
             - name: pods
               mountPath: /var/log/pods
               readOnly: true
+            - name: containers
+              mountPath: /var/log/containers
+              readOnly: true
             - name: containerd
               mountPath: /var/lib/containerd
               readOnly: true
@@ -159,6 +162,9 @@ spec:
         - name: pods
           hostPath:
             path: /var/log/pods
+        - name: containers
+          hostPath:
+            path: /var/log/containers
         - name: containerd
           hostPath:
             path: /var/lib/containerd
