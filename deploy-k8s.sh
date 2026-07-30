@@ -129,8 +129,18 @@ echo "  ✅ Platform services ready"
 
 apply_template platform/identity/spire/spire-bundle.yaml
 echo "  ⏳ Waiting for SPIRE..."
-kubectl rollout status statefulset/spire-server -n spire --timeout=120s
-kubectl rollout status daemonset/spire-agent -n spire --timeout=120s
+if ! kubectl rollout status statefulset/spire-server -n spire --timeout=120s; then
+    echo "❌ SPIRE Server failed to roll out! Diagnostics:"
+    kubectl describe pod -l app=spire-server -n spire
+    kubectl logs -l app=spire-server -n spire
+    exit 1
+fi
+if ! kubectl rollout status daemonset/spire-agent -n spire --timeout=120s; then
+    echo "❌ SPIRE Agent failed to roll out! Diagnostics:"
+    kubectl describe pod -l app=spire-agent -n spire
+    kubectl logs -l app=spire-agent -n spire
+    exit 1
+fi
 echo "  ✅ SPIRE Infrastructure deployed"
 
 apply_template k8s/templates/05-spire-envoy.yaml

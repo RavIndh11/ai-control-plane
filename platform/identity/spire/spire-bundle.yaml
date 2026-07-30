@@ -50,9 +50,9 @@ data:
       ca_key_type = "rsa-2048"
       default_svid_ttl = "1h"
       ca_subject = {
-        country = ["US"],
-        organization = ["Enterprise AI"],
-        common_name = "control-plane.local",
+        country = ["US"]
+        organization = ["Enterprise AI"]
+        common_name = "control-plane.local"
       }
     }
     plugins {
