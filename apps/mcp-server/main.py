@@ -88,11 +88,36 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
         ]
     elif name == "check_kubernetes_pods":
         ns = arguments.get("namespace") if arguments else "default"
-        # Simulate a kubectl command for the dashboard testing
+        try:
+            import httpx
+            token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+            ca_cert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            with open(token_path, "r") as f:
+                token = f.read().strip()
+            
+            headers = {"Authorization": f"Bearer {token}"}
+            async with httpx.AsyncClient(verify=ca_cert) as client:
+                res = await client.get(
+                    f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/pods",
+                    headers=headers
+                )
+                if res.status_code == 200:
+                    pods = res.json().get("items", [])
+                    lines = [f"Pods in namespace '{ns}':"]
+                    for p in pods:
+                        name = p["metadata"]["name"]
+                        phase = p.get("status", {}).get("phase", "Unknown")
+                        lines.append(f"- {name} ({phase})")
+                    text_output = "\n".join(lines)
+                else:
+                    text_output = f"API Error {res.status_code}: {res.text}"
+        except Exception as exc:
+            text_output = f"Failed to fetch real pods: {exc}"
+
         return [
             types.TextContent(
                 type="text",
-                text=f"Pods in {ns}:\n- agent-orchestrator-8b5d... (Running)\n- mcp-server-578a... (Running)\n- postgres-0 (Running)"
+                text=text_output
             )
         ]
     else:
