@@ -15,7 +15,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "sum by (container) (rate({container=~\"$container\"} |~ \".+\" [1m]))",
+          "expr": "sum by (container) (rate({container=~\"$container\"} [1m]))",
           "refId": "A",
           "legendFormat": "{{container}}"
         }
@@ -41,7 +41,7 @@
       "gridPos": { "h": 5, "w": 8, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "sum(count_over_time({container=~\"agent-orchestrator.*\"} |= \"[GovernanceShield] Tool\" |= \"rejected\" [1h]))",
+          "expr": "sum(count_over_time({container=\"agent-orchestrator\"} |= \"[GovernanceShield] Tool\" |= \"rejected\" [1h]))",
           "refId": "A"
         }
       ]
@@ -65,7 +65,7 @@
       "gridPos": { "h": 5, "w": 8, "x": 16, "y": 8 },
       "targets": [
         {
-          "expr": "sum(count_over_time({container=~\"agent-orchestrator.*\"} |= \"POST /api/v1/threads\" [1h]))",
+          "expr": "sum(count_over_time({container=\"agent-orchestrator\"} |= \"POST /api/v1/threads\" [1h]))",
           "refId": "A"
         }
       ]
