@@ -55,7 +55,7 @@ data:
             "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
             common_tls_context:
               tls_certificate_sds_secret_configs:
-              - name: "spiffe://control-plane.local/ns/${NAMESPACE}/sa/agent-orchestrator-sa"
+              - name: "spiffe://control-plane.local/ns/${NAMESPACE}/sa/agent-orchestrator-sa/app/agent-orchestrator"
                 sds_config:
                   api_config_source:
                     api_type: GRPC
@@ -132,7 +132,7 @@ data:
               require_client_certificate: true
               common_tls_context:
                 tls_certificate_sds_secret_configs:
-                - name: "spiffe://control-plane.local/ns/${NAMESPACE}/sa/governance-engine-sa"
+                - name: "spiffe://control-plane.local/ns/${NAMESPACE}/sa/governance-engine-sa/app/governance-engine"
                   sds_config:
                     api_config_source:
                       api_type: GRPC
