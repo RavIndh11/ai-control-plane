@@ -48,7 +48,6 @@ data:
       data_dir = "/run/spire/data"
       log_level = "DEBUG"
       ca_key_type = "rsa-2048"
-      default_svid_ttl = "1h"
       ca_subject = {
         country = ["US"]
         organization = ["Enterprise AI"]
