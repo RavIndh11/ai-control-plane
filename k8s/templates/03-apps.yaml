@@ -145,7 +145,7 @@ spec:
           command: ['sh', '-c', 'until nc -z postgres.${NAMESPACE}.svc.cluster.local 5432; do echo waiting for postgres; sleep 2; done']
         - name: wait-for-governance
           image: busybox:1.36
-          command: ['sh', '-c', 'until nc -z governance-engine.${NAMESPACE}.svc.cluster.local 8000; do echo waiting for governance-engine; sleep 3; done']
+          command: ['sh', '-c', 'until nc -z governance-engine.${NAMESPACE}.svc.cluster.local 8443; do echo waiting for governance-engine; sleep 3; done']
       containers:
         - name: envoy
           image: envoyproxy/envoy:v1.27.0
