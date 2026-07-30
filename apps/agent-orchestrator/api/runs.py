@@ -149,6 +149,24 @@ def _save_checkpoint(db: Session, thread_id: str, step: str, state: dict) -> str
     return checkpoint_id
 
 
+if _HAS_LANGFUSE:
+    @observe(name="agent_run")
+    def _execute_agent_run(state_to_run: dict, config: dict, tenant_id: str, user_id: str, thread_id: str, agent_type: str) -> dict:
+        langfuse_context.update_current_observation(
+            input={"input": state_to_run.get("input"), "agent_type": agent_type},
+            metadata={"tenant_id": tenant_id, "thread_id": thread_id, "user_id": user_id, "session_id": thread_id}
+        )
+        try:
+            langfuse_context.update_current_trace(user_id=user_id, session_id=thread_id)
+        except Exception:
+            pass
+        res = get_graph().invoke(state_to_run, config=config)
+        langfuse_context.update_current_observation(
+            output={"output": res.get("output"), "steps": res.get("steps")}
+        )
+        return res
+
+
 # -------------------------------------------------------------------------
 # POST /threads/{thread_id}/runs  — synchronous
 # -------------------------------------------------------------------------
@@ -184,23 +202,7 @@ def run_thread(
 
     config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
     if _HAS_LANGFUSE:
-        @observe(name="agent_run")
-        def _invoke_graph():
-            langfuse_context.update_current_observation(
-                input={"input": state_to_run.get("input"), "agent_type": thread.agent_type},
-                metadata={"tenant_id": tenant_id, "thread_id": thread_id, "user_id": user_id, "session_id": thread_id}
-            )
-            try:
-                langfuse_context.update_current_trace(user_id=user_id, session_id=thread_id)
-            except Exception:
-                pass
-            res = get_graph().invoke(state_to_run, config=config)
-            langfuse_context.update_current_observation(
-                output={"output": res.get("output"), "steps": res.get("steps")}
-            )
-            return res
-
-        final_state = _invoke_graph()
+        final_state = _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
         _flush_langfuse()
     else:
         final_state = get_graph().invoke(state_to_run, config=config)
@@ -270,23 +272,10 @@ async def stream_thread(
         config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
         try:
             if _HAS_LANGFUSE:
-                @observe(name="agent_run_stream")
-                def _invoke_graph_stream():
-                    langfuse_context.update_current_observation(
-                        input={"input": state_to_run.get("input"), "agent_type": thread.agent_type},
-                        metadata={"tenant_id": tenant_id, "thread_id": thread_id, "user_id": user_id, "session_id": thread_id}
-                    )
-                    try:
-                        langfuse_context.update_current_trace(user_id=user_id, session_id=thread_id)
-                    except Exception:
-                        pass
-                    res = get_graph().invoke(state_to_run, config=config)
-                    langfuse_context.update_current_observation(
-                        output={"output": res.get("output"), "steps": res.get("steps")}
-                    )
-                    return res
-
-                intermediate_state = await loop.run_in_executor(None, _invoke_graph_stream)
+                intermediate_state = await loop.run_in_executor(
+                    None, 
+                    lambda: _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
+                )
                 _flush_langfuse()
             else:
                 intermediate_state = await loop.run_in_executor(
