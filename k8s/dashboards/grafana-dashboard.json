@@ -15,7 +15,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "targets": [
         {
-          "expr": "sum by (container) (rate({container=~\"$container\"} [1m]))",
+          "expr": "sum by (container) (rate({container=~\".+\"} [1m]))",
           "refId": "A",
           "legendFormat": "{{container}}"
         }
@@ -28,7 +28,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
       "targets": [
         {
-          "expr": "sum by (container) (rate({container=~\"$container\"} |~ \"(?i)(error|failed|warning|unreachable|exception|timeout)\" [1m]))",
+          "expr": "sum by (container) (rate({container=~\".+\"} |~ \"(?i)(error|failed|warning|unreachable|exception|timeout)\" [1m]))",
           "refId": "A",
           "legendFormat": "{{container}}"
         }
@@ -77,7 +77,7 @@
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 13 },
       "targets": [
         {
-          "expr": "{container=~\"$container\"}",
+          "expr": "{container=~\".+\"}",
           "refId": "A"
         }
       ]
@@ -87,18 +87,7 @@
   "schemaVersion": 38,
   "tags": ["ai-control-plane", "zero-trust"],
   "templating": {
-    "list": [
-      {
-        "name": "container",
-        "type": "query",
-        "datasource": "Loki",
-        "query": "label_values(container)",
-        "refresh": 1,
-        "includeAll": true,
-        "multi": true,
-        "allValue": ".*"
-      }
-    ]
+    "list": []
   },
   "time": {
     "from": "now-1h",
