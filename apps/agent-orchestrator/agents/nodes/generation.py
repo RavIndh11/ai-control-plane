@@ -132,7 +132,7 @@ def generation_node(state: AgentState) -> AgentState:
 
     output = ""
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             from auth.litellm_keys import get_virtual_key_for_tenant
             api_key = get_virtual_key_for_tenant(tenant_id)
             

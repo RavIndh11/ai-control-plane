@@ -45,6 +45,19 @@ for k in ["LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_HOST"]:
     if v:
         os.environ[k] = v.strip("\"' \t\n\r")
 
+
+def _flush_langfuse():
+    pk = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip("\"' \t\n\r")
+    sk = os.getenv("LANGFUSE_SECRET_KEY", "").strip("\"' \t\n\r")
+    host = os.getenv("LANGFUSE_HOST", "http://langfuse.control-plane.svc.cluster.local:3000").strip("\"' \t\n\r")
+    if pk and sk:
+        try:
+            from langfuse import Langfuse
+            lf = Langfuse(public_key=pk, secret_key=sk, host=host)
+            lf.flush()
+        except Exception as exc:
+            print(f"[Langfuse] Explicit flush error: {exc}")
+
 LLM_GATEWAY_URL: str   = os.getenv("LLM_GATEWAY_URL",   "http://localhost:4000/v1")
 LLM_MODEL: str         = os.getenv("LLM_MODEL",         "llama2")
 
@@ -184,10 +197,7 @@ def run_thread(
             return res
 
         final_state = _invoke_graph()
-        try:
-            Langfuse().flush()
-        except Exception as exc:
-            print(f"[Langfuse] Flush error: {exc}")
+        _flush_langfuse()
     else:
         final_state = get_graph().invoke(state_to_run, config=config)
 
@@ -271,10 +281,7 @@ async def stream_thread(
                     return res
 
                 intermediate_state = await loop.run_in_executor(None, _invoke_graph_stream)
-                try:
-                    Langfuse().flush()
-                except Exception as exc:
-                    print(f"[Langfuse] Flush error: {exc}")
+                _flush_langfuse()
             else:
                 intermediate_state = await loop.run_in_executor(
                     None, lambda: get_graph().invoke(state_to_run, config=config)

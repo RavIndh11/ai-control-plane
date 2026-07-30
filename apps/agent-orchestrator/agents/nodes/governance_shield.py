@@ -134,25 +134,28 @@ def _push_resolution_evidence(
 
 
 def _execute_tool(tool_name: str, tool_args: dict) -> str:
-    """Execute tool call via MCP server or fallback simulation."""
+    """Execute tool call via MCP server or fallback simulation with a strict timeout."""
     mcp_url = os.getenv("MCP_SERVER_URL", "http://mcp-server.control-plane.svc.cluster.local:8002")
-    try:
-        import asyncio
+    
+    async def _call():
         from mcp.client.sse import sse_client
         from mcp.client.session import ClientSession
+        async with sse_client(f"{mcp_url}/sse") as streams:
+            async with ClientSession(streams[0], streams[1]) as session:
+                await session.initialize()
+                res = await session.call_tool(tool_name, arguments=tool_args)
+                if res.content:
+                    return "\n".join(getattr(c, "text", str(c)) for c in res.content)
+        return f"Action approved: '{tool_name}' executed."
 
-        async def _call():
-            async with sse_client(f"{mcp_url}/sse") as streams:
-                async with ClientSession(streams[0], streams[1]) as session:
-                    await session.initialize()
-                    res = await session.call_tool(tool_name, arguments=tool_args)
-                    if res.content:
-                        return "\n".join(getattr(c, "text", str(c)) for c in res.content)
-            return f"Action approved: '{tool_name}' executed."
+    async def _call_with_timeout():
+        return await asyncio.wait_for(_call(), timeout=3.0)
 
-        return asyncio.run(_call())
+    try:
+        import asyncio
+        return asyncio.run(_call_with_timeout())
     except Exception as exc:
-        print(f"[GovernanceShield] Tool execution fallback: {exc}")
+        print(f"[GovernanceShield] Tool execution fallback ({exc})")
         if tool_name == "check_kubernetes_pods":
             ns = tool_args.get("namespace", "control-plane")
             return (

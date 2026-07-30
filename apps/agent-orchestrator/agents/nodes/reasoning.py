@@ -167,7 +167,7 @@ def agent_node(state: AgentState) -> AgentState:
     dynamic_tools = asyncio.run(fetch_mcp_tools_with_timeout())
 
     try:
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=120.0) as client:
             payload = {
                 "model":       LLM_MODEL,
                 "messages":    messages,
