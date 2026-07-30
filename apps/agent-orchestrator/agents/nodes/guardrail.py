@@ -133,7 +133,6 @@ except Exception:
 class langfuse_context:  # type: ignore[no-redef]
     @staticmethod
     def update_current_observation(**_: Any) -> None: pass
-            pass
 
 
 # ── Layer 1: LLM Intent Classifier ───────────────────────────────────────────
