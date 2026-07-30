@@ -129,8 +129,8 @@ echo "  ✅ Platform services ready"
 
 apply_template platform/identity/spire/spire-bundle.yaml
 echo "  ⏳ Restarting SPIRE pods to pick up config..."
-kubectl rollout restart statefulset/spire-server -n spire
-kubectl rollout restart daemonset/spire-agent -n spire
+kubectl delete pod -n spire -l app=spire-server --force --grace-period=0 2>/dev/null || true
+kubectl delete pod -n spire -l app=spire-agent --force --grace-period=0 2>/dev/null || true
 echo "  ⏳ Waiting for SPIRE..."
 if ! kubectl rollout status statefulset/spire-server -n spire --timeout=120s; then
     echo "❌ SPIRE Server failed to roll out! Diagnostics:"
