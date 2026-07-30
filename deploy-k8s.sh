@@ -146,6 +146,16 @@ if ! kubectl rollout status daemonset/spire-agent -n spire --timeout=120s; then
 fi
 echo "  ✅ SPIRE Infrastructure deployed"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Register workload identities in SPIRE (MUST run before apps restart)
+# ─────────────────────────────────────────────────────────────────────────────
+echo ""
+echo "── Step 7: SPIRE (workload identity) ───────────────────"
+echo "  Registering workload identities..."
+chmod +x platform/identity/spire/register-workloads.sh
+./platform/identity/spire/register-workloads.sh
+echo "  ✅ Configured Envoy Sidecars and Registered Identities"
+
 apply_template k8s/templates/05-spire-envoy.yaml
 echo "  ✅ SPIRE Envoy configurations applied"
 
@@ -225,15 +235,6 @@ kubectl exec -n "$NAMESPACE" "$MINIO_POD" -- \
            mc mb local/manifold-evidence 2>/dev/null || true; \
            echo 'Bucket ready'" || echo "  ⚠️  MinIO bucket setup skipped (mc not in image — use web UI at :30090)"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Deploy SPIRE for workload identity
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "── Step 7: SPIRE (workload identity) ───────────────────"
-echo "  Registering workload identities..."
-chmod +x platform/identity/spire/register-workloads.sh
-./platform/identity/spire/register-workloads.sh
-echo "  ✅ Configured Envoy Sidecars and Registered Identities"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 8. Summary
