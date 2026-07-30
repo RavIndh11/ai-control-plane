@@ -92,6 +92,8 @@ spec:
       labels:
         app: spire-server
     spec:
+      nodeSelector:
+        node-role: datastore
       serviceAccountName: spire-server-sa
       containers:
         - name: spire-server
