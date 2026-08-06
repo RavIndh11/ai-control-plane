@@ -37,7 +37,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from auth.principal import get_principal
-from authz.cerbos   import is_authorized
 from agents.graph   import get_graph
 from agents.state   import AgentState, empty_state
 from db.models      import DBAgentThread, DBAgentCheckpoint
@@ -174,10 +173,6 @@ def run_thread(
         db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
     thread = _get_thread_or_404(thread_id, tenant_id, db)
-    if not is_authorized(
-        principal, "agent_thread", thread_id, "write", {"tenant_id": thread.tenant_id}
-    ):
-        raise HTTPException(status_code=403, detail="Unauthorized")
 
     last_cp = (
         db.query(DBAgentCheckpoint)
@@ -236,10 +231,6 @@ async def stream_thread(
         db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
 
     thread = _get_thread_or_404(thread_id, tenant_id, db)
-    if not is_authorized(
-        principal, "agent_thread", thread_id, "write", {"tenant_id": thread.tenant_id}
-    ):
-        raise HTTPException(status_code=403, detail="Unauthorized")
 
     last_cp = (
         db.query(DBAgentCheckpoint)

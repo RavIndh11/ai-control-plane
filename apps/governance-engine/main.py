@@ -333,22 +333,8 @@ def get_db(principal: Dict[str, Any] = Depends(get_principal)):
 
 
 def is_authorized(principal: Dict[str, Any], resource_kind: str, resource_id: str, action: str, resource_attr: Dict[str, Any]) -> bool:
-    payload = {
-        "requestId": str(uuid.uuid4()),
-        "principal": {"id": principal["id"], "roles": principal["roles"], "attr": {"tenant_id": principal["tenant_id"]}},
-        "resources": [{"actions": [action], "resource": {"id": resource_id, "kind": resource_kind, "attr": resource_attr}}],
-    }
-    try:
-        with httpx.Client() as client:
-            res = client.post(f"{CERBOS_URL}/api/check/resources", json=payload, timeout=2.0)
-            if res.status_code == 200:
-                results = res.json().get("results", [])
-                if results:
-                    effect = results[0].get("actions", {}).get(action, "EFFECT_DENY")
-                    return effect == "EFFECT_ALLOW"
-    except Exception:
-        print(f"[Warning] Cerbos PDP unreachable. Emulating authorization locally.")
-
+    # Cerbos PDP was removed in favour of AGT native governance.
+    # Emulating basic dashboard read/write authorization locally.
     roles = principal["roles"]
     tenant_id = principal["tenant_id"]
     res_tenant_id = resource_attr.get("tenant_id")
@@ -436,24 +422,32 @@ def get_evidence(
     ]
     return {"items": items, "total": total}
 
+class AGTAuditLog(BaseModel):
+    run_id: str
+    agent_id: str
+    tool_name: str
+    action_type: str
+    verdict: str
+    reason: str
+    timestamp: str
+    payload: Dict[str, Any]
 
-@app.post("/api/v1/evidence", response_model=EvidenceResponse, status_code=201)
-@observe(name="create_evidence")
-def create_evidence(
-    evidence: EvidenceCreate,
+@app.post("/api/v1/agt/audit_logs", status_code=201)
+def ingest_agt_audit_log(
+    audit_log: AGTAuditLog,
     principal: Dict[str, Any] = Depends(get_principal),
     db: Session = Depends(get_db),
 ):
-    tenant_id = principal["tenant_id"]
-    if not is_authorized(principal, "compliance_evidence", "new", "create", {"tenant_id": tenant_id}):
-        raise HTTPException(status_code=403, detail="Unauthorized: cannot write GRC evidence")
-
+    tenant_id = principal.get("tenant_id", "default")
+    
     evidence_id = str(uuid.uuid4())
     timestamp   = datetime.utcnow()
-    minio_path  = f"tenants/{tenant_id}/evidence/{timestamp.strftime('%Y-%m-%d')}/{evidence_id}.json"
+    minio_path  = f"tenants/{tenant_id}/evidence/agt_audit/{timestamp.strftime('%Y-%m-%d')}/{evidence_id}.json"
 
+    control_id = "AGT-TOOL-GOV-01"
+    
     # Compute HMAC for tamper-evidence
-    evidence_hmac = _sign_evidence(evidence_id, tenant_id, evidence.control_id, evidence.payload)
+    evidence_hmac = _sign_evidence(evidence_id, tenant_id, control_id, audit_log.payload)
 
     if not DATABASE_URL.startswith("sqlite"):
         db.execute(text("SET LOCAL app.current_tenant_id = :tid"), {"tid": tenant_id})
@@ -461,55 +455,24 @@ def create_evidence(
     db_evidence = DBComplianceEvidence(
         evidence_id=evidence_id,
         tenant_id=tenant_id,
-        control_id=evidence.control_id,
-        source_component=evidence.source_component,
-        event_type=evidence.event_type,
-        severity=evidence.severity,
-        payload=evidence.payload,
+        control_id=control_id,
+        source_component="agent-governance-toolkit",
+        event_type="audit_log",
+        severity="high" if audit_log.verdict == "deny" else "info",
+        payload=audit_log.dict(),
         minio_object_path=minio_path,
-        evidence_hmac=evidence_hmac,
-        created_at=timestamp,
+        hmac_signature=evidence_hmac,
+        created_at=timestamp
     )
     db.add(db_evidence)
+    
+    # If denied, deduct compliance score
+    if audit_log.verdict == "deny":
+        _deduct_score(db, tenant_id, 2)
+        _send_alert(tenant_id, "agt_policy_violation", "high", audit_log.payload)
+
     db.commit()
-    db.refresh(db_evidence)
-
-    # Upload to MinIO (best-effort, non-blocking)
-    if MINIO_ENDPOINT:
-        evidence_json = json.dumps({
-            "evidence_id": evidence_id, "tenant_id": tenant_id,
-            "control_id": evidence.control_id, "source_component": evidence.source_component,
-            "event_type": evidence.event_type, "severity": evidence.severity,
-            "payload": evidence.payload, "evidence_hmac": evidence_hmac,
-            "created_at": timestamp.isoformat(),
-        })
-        try:
-            with httpx.Client() as minio_client:
-                minio_client.put(
-                    f"{MINIO_ENDPOINT}/{MINIO_BUCKET}/{minio_path}",
-                    content=evidence_json.encode("utf-8"),
-                    headers={"Content-Type": "application/json"},
-                    auth=(MINIO_ACCESS_KEY, MINIO_SECRET_KEY),
-                    timeout=5.0,
-                )
-        except Exception as exc:
-            print(f"[MinIO] Upload failed (non-blocking): {exc}")
-
-    # Fire alert webhook for high/critical events
-    if evidence.severity in ("high", "critical"):
-        _send_alert(tenant_id, evidence.event_type, evidence.severity, evidence.payload)
-
-    return {
-        "evidence_id":       uuid.UUID(db_evidence.evidence_id),
-        "control_id":        db_evidence.control_id,
-        "source_component":  db_evidence.source_component,
-        "event_type":        db_evidence.event_type,
-        "severity":          db_evidence.severity,
-        "payload":           db_evidence.payload,
-        "minio_object_path": db_evidence.minio_object_path,
-        "evidence_hmac":     db_evidence.evidence_hmac,
-        "created_at":        db_evidence.created_at,
-    }
+    return {"status": "ingested", "evidence_id": evidence_id}
 
 
 @app.get("/api/v1/compliance/status", response_model=ComplianceStatusResponse)

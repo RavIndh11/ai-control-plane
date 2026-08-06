@@ -7,8 +7,7 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.responses import JSONResponse
 
-from cerbos_client import check_tool_permission
-
+from agentmesh.governance import govern
 # Create an MCP server instance
 server = Server("ai-control-plane-mcp")
 
@@ -53,76 +52,66 @@ async def handle_list_tools() -> list[types.Tool]:
         )
     ]
 
+@govern(policy="policy.yaml")
+def do_fetch_compliance_policy(action: str, policy_type: str) -> str:
+    return f"Content for {policy_type} Policy: All data must be encrypted at rest and in transit."
+
+@govern(policy="policy.yaml")
+def do_query_user_data(action: str, user_id: str) -> str:
+    return f"User Data for {user_id}: Name: John Doe, Plan: Enterprise"
+
+@govern(policy="policy.yaml")
+def do_check_kubernetes_pods(action: str, namespace: str) -> str:
+    try:
+        import httpx
+        token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+        ca_cert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        with open(token_path, "r") as f:
+            token = f.read().strip()
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        # Using sync httpx for simplicity in the wrapped function
+        with httpx.Client(verify=ca_cert) as client:
+            res = client.get(
+                f"https://kubernetes.default.svc/api/v1/namespaces/{namespace}/pods",
+                headers=headers
+            )
+            if res.status_code == 200:
+                pods = res.json().get("items", [])
+                lines = [f"Pods in namespace '{namespace}':"]
+                for p in pods:
+                    name = p["metadata"]["name"]
+                    phase = p.get("status", {}).get("phase", "Unknown")
+                    lines.append(f"- {name} ({phase})")
+                return "\n".join(lines)
+            else:
+                return f"API Error {res.status_code}: {res.text}"
+    except Exception as exc:
+        return f"Failed to fetch real pods: {exc}"
+
 @server.call_tool()
 async def handle_call_tool(name: str, arguments: dict | None) -> list[types.TextContent]:
     """
     Execute a tool.
     """
-    principal_id = "agent-123"
-    role = "compliance-agent"
-
-    is_allowed = await check_tool_permission(principal_id, role, name)
-    if not is_allowed:
-        return [
-            types.TextContent(
-                type="text",
-                text=f"ERROR: Authorization denied. Agent '{principal_id}' (role: {role}) is not allowed to execute tool '{name}'."
-            )
-        ]
-
-    if name == "fetch_compliance_policy":
-        policy_type = arguments.get("policy_type") if arguments else "SOC2"
-        return [
-            types.TextContent(
-                type="text",
-                text=f"Content for {policy_type} Policy: All data must be encrypted at rest and in transit."
-            )
-        ]
-    elif name == "query_user_data":
-        user_id = arguments.get("user_id") if arguments else "unknown"
-        return [
-            types.TextContent(
-                type="text",
-                text=f"User Data for {user_id}: Name: John Doe, Plan: Enterprise"
-            )
-        ]
-    elif name == "check_kubernetes_pods":
-        ns = arguments.get("namespace") if arguments else "default"
-        try:
-            import httpx
-            token_path = "/var/run/secrets/kubernetes.io/serviceaccount/token"
-            ca_cert = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-            with open(token_path, "r") as f:
-                token = f.read().strip()
+    try:
+        if name == "fetch_compliance_policy":
+            policy_type = arguments.get("policy_type") if arguments else "SOC2"
+            text_val = do_fetch_compliance_policy(action=name, policy_type=policy_type)
+        elif name == "query_user_data":
+            user_id = arguments.get("user_id") if arguments else "unknown"
+            text_val = do_query_user_data(action=name, user_id=user_id)
+        elif name == "check_kubernetes_pods":
+            ns = arguments.get("namespace") if arguments else "default"
+            text_val = do_check_kubernetes_pods(action=name, namespace=ns)
+        else:
+            raise ValueError(f"Unknown tool: {name}")
             
-            headers = {"Authorization": f"Bearer {token}"}
-            async with httpx.AsyncClient(verify=ca_cert) as client:
-                res = await client.get(
-                    f"https://kubernetes.default.svc/api/v1/namespaces/{ns}/pods",
-                    headers=headers
-                )
-                if res.status_code == 200:
-                    pods = res.json().get("items", [])
-                    lines = [f"Pods in namespace '{ns}':"]
-                    for p in pods:
-                        name = p["metadata"]["name"]
-                        phase = p.get("status", {}).get("phase", "Unknown")
-                        lines.append(f"- {name} ({phase})")
-                    text_output = "\n".join(lines)
-                else:
-                    text_output = f"API Error {res.status_code}: {res.text}"
-        except Exception as exc:
-            text_output = f"Failed to fetch real pods: {exc}"
-
-        return [
-            types.TextContent(
-                type="text",
-                text=text_output
-            )
-        ]
-    else:
-        raise ValueError(f"Unknown tool: {name}")
-
+        return [types.TextContent(type="text", text=text_val)]
+    except Exception as e:
+        if "GovernanceDenied" in str(type(e).__name__):
+            return [types.TextContent(type="text", text=f"ERROR: Authorization denied by AGT: {e}")]
+        raise
 
 # FastAPI Application
 app = FastAPI()

@@ -17,7 +17,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from auth.principal import get_principal
-from authz.cerbos   import is_authorized
 from db.models      import DBAgentThread, DBAgentCheckpoint
 from db.session     import DATABASE_URL, get_db
 
@@ -57,10 +56,6 @@ def create_thread(
 ):
     tenant_id = principal["tenant_id"]
 
-    if not is_authorized(
-        principal, "agent_thread", "new", "write", {"tenant_id": tenant_id}
-    ):
-        raise HTTPException(status_code=403, detail="Unauthorized: cannot create threads")
 
     thread_id = f"th_{uuid.uuid4().hex[:12]}"
     timestamp = datetime.utcnow()
@@ -122,10 +117,6 @@ def get_thread_state(
     if not thread:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    if not is_authorized(
-        principal, "agent_thread", thread_id, "read", {"tenant_id": thread.tenant_id}
-    ):
-        raise HTTPException(status_code=403, detail="Unauthorized: cannot read this thread")
 
     checkpoints = (
         db.query(DBAgentCheckpoint)
@@ -199,10 +190,6 @@ def approve_thread_run(
     db:        Session        = Depends(_db_dep),
 ):
     tenant_id = principal["tenant_id"]
-    if not is_authorized(
-        principal, "agent_thread", thread_id, "write", {"tenant_id": tenant_id}
-    ):
-        raise HTTPException(status_code=403, detail="Unauthorized")
 
     checkpoint = (
         db.query(DBAgentCheckpoint)

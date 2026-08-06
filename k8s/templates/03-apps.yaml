@@ -50,8 +50,6 @@ spec:
           env:
             - name: DATABASE_URL
               value: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres.${NAMESPACE}.svc.cluster.local:5432/${POSTGRES_DB}"
-            - name: CERBOS_URL
-              value: "http://cerbos.${NAMESPACE}.svc.cluster.local:3592"
             - name: MINIO_ENDPOINT
               value: "http://minio.${NAMESPACE}.svc.cluster.local:9000"
             - name: MINIO_ACCESS_KEY
@@ -182,8 +180,6 @@ spec:
               value: "mistral-cpu"
             - name: EMBEDDING_MODEL
               value: "qwen3-embedding"
-            - name: CERBOS_URL
-              value: "http://cerbos.${NAMESPACE}.svc.cluster.local:3592"
             - name: QDRANT_URL
               value: "http://qdrant.${NAMESPACE}.svc.cluster.local:6333"
             - name: QDRANT_COLLECTION
@@ -364,8 +360,6 @@ spec:
             - containerPort: 8002
               name: http
           env:
-            - name: CERBOS_URL
-              value: "http://cerbos.${NAMESPACE}.svc.cluster.local:3592"
           readinessProbe:
             httpGet:
               path: /health

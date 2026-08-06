@@ -8,7 +8,6 @@ Responsibilities of this file (ONLY):
 
 All other logic lives in dedicated modules:
   auth/       — JWT verification, principal resolution
-  authz/      — Cerbos ABAC
   db/         — SQLAlchemy models, session dependency
   agents/     — LangGraph state, nodes, graph definition
   api/        — Thread and run route handlers  (added in Phase 2)
