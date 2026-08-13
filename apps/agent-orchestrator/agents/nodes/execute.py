@@ -4,7 +4,7 @@ from agents.state import AgentState
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
 
-MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-server.control-plane.svc.cluster.local:8002")
+MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", "http://mcp-server.default.svc.cluster.local:8002")
 
 def execute_node(state: AgentState) -> AgentState:
     """Executes the pending MCP tool call and stores the result."""
@@ -27,9 +27,17 @@ def execute_node(state: AgentState) -> AgentState:
         except Exception as e:
             return f"Error executing tool: {e}"
 
-    tool_result = asyncio.run(call_mcp_tool())
+    # Safely run the async code in a new event loop to avoid RuntimeError in FastAPI
+    try:
+        loop = asyncio.get_running_loop()
+        # If an event loop is running, we must run it in a separate thread to avoid crashing
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            tool_result = pool.submit(lambda: asyncio.run(call_mcp_tool())).result()
+    except RuntimeError:
+        # No running event loop, safe to run directly
+        tool_result = asyncio.run(call_mcp_tool())
     
-    # Store the result so generation_node or agent_node can use it
     state["output"] = tool_result
     state["pending_action"] = None
     
