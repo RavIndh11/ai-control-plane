@@ -14,19 +14,19 @@ data:
     model_list:
       - model_name: mistral-cpu
         litellm_params:
-          model: ollama/steamdj/mistral-cpu-only:latest
+          model: ollama/mistral
           api_base: http://ollama.${NAMESPACE}.svc.cluster.local:11434
           tpm: 100000
           rpm: 60
       - model_name: llama3.1-cpu
         litellm_params:
-          model: ollama/steamdj/llama3.1-cpu-only:latest
+          model: ollama/llama3.1
           api_base: http://ollama.${NAMESPACE}.svc.cluster.local:11434
           tpm: 100000
           rpm: 40
       - model_name: qwen3-embedding
         litellm_params:
-          model: ollama/qwen3-embedding:4b
+          model: ollama/nomic-embed-text
           api_base: http://ollama.${NAMESPACE}.svc.cluster.local:11434
           input_cost_per_token: 0
           output_cost_per_token: 0
