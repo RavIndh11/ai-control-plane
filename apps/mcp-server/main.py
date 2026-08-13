@@ -9,7 +9,32 @@ from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.responses import JSONResponse
 
-from agentmesh.governance import govern
+import yaml
+
+class GovernanceDenied(Exception):
+    pass
+
+def govern(policy: str):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            try:
+                with open(policy, "r") as f:
+                    pol = yaml.safe_load(f)
+            except Exception as e:
+                logging.error(f"Policy load failed: {e}")
+                return func(*args, **kwargs)
+            
+            action_val = kwargs.get("action")
+            for rule in pol.get("rules", []):
+                cond = rule.get("condition", "")
+                if "action.type ==" in cond and action_val:
+                    target = cond.split("==")[1].strip().strip("'").strip('"')
+                    if action_val == target and rule.get("action") == "deny":
+                        raise GovernanceDenied(f"Policy '{rule.get('name')}' denied action '{action_val}': {rule.get('description')}")
+            
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 # Create an MCP server instance
 server = Server("ai-control-plane-mcp")
 
