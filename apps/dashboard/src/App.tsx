@@ -71,8 +71,6 @@ interface TopologyLink {
 
 function App() {
   // --- Auth State ---
-  const [keycloakInitialized, setKeycloakInitialized] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
   
   const [activeTab, setActiveTab] = useState<'dashboard' | 'aibom' | 'topology' | 'playground' | 'system-links'>('dashboard');
   const [selectedTenant, setSelectedTenant] = useState<string>('');
@@ -111,8 +109,6 @@ function App() {
   // --- Fetch Tenants ---
   useEffect(() => {
     keycloak.init({ onLoad: 'login-required' }).then(auth => {
-      setAuthenticated(auth);
-      setKeycloakInitialized(true);
       if (auth) {
         const claims = keycloak.tokenParsed as unknown as Record<string, unknown>;
         const tokenTenant = (claims?.tenant_id as string) || 'default';
