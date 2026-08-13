@@ -126,37 +126,18 @@ echo "  ⏳ Waiting for platform services..."
 kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
-apply_template platform/identity/spire/spire-bundle.yaml
-echo "  ⏳ Restarting SPIRE pods to pick up config..."
-kubectl delete pod -n spire -l app=spire-server --force --grace-period=0 2>/dev/null || true
-kubectl delete pod -n spire -l app=spire-agent --force --grace-period=0 2>/dev/null || true
-echo "  ⏳ Waiting for SPIRE..."
-if ! kubectl rollout status statefulset/spire-server -n spire --timeout=120s; then
-    echo "❌ SPIRE Server failed to roll out! Diagnostics:"
-    kubectl describe pod -l app=spire-server -n spire
-    kubectl logs -l app=spire-server -n spire
     exit 1
 fi
-if ! kubectl rollout status daemonset/spire-agent -n spire --timeout=120s; then
-    echo "❌ SPIRE Agent failed to roll out! Diagnostics:"
-    kubectl describe pod -l app=spire-agent -n spire
-    kubectl logs -l app=spire-agent -n spire
     exit 1
 fi
-echo "  ✅ SPIRE Infrastructure deployed"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 7. Register workload identities in SPIRE (MUST run before apps restart)
 # ─────────────────────────────────────────────────────────────────────────────
 echo ""
-echo "── Step 7: SPIRE (workload identity) ───────────────────"
 echo "  Registering workload identities..."
-chmod +x platform/identity/spire/register-workloads.sh
-./platform/identity/spire/register-workloads.sh
 echo "  ✅ Configured Envoy Sidecars and Registered Identities"
 
-apply_template k8s/templates/05-spire-envoy.yaml
-echo "  ✅ SPIRE Envoy configurations applied"
 
 apply_template k8s/templates/03-apps.yaml
 echo "  ⏳ Rolling restart to pick up new images..."
