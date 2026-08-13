@@ -28,17 +28,19 @@ spec:
               value: "true"
             - name: KC_DB_PASSWORD
               value: "${POSTGRES_PASSWORD}"
-            - name: KEYCLOAK_ADMIN
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: "${KEYCLOAK_ADMIN_USER}"
-            - name: KEYCLOAK_ADMIN_PASSWORD
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
               value: "${KEYCLOAK_ADMIN_PASSWORD}"
           ports:
             - name: http
               containerPort: 8080
+            - name: management
+              containerPort: 9000
           readinessProbe:
             httpGet:
-              path: /realms/master
-              port: 8080
+              path: /health/ready
+              port: 9000
             initialDelaySeconds: 15
             periodSeconds: 10
 ---
