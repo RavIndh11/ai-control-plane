@@ -65,8 +65,6 @@ spec:
       labels:
         app: litellm
     spec:
-      nodeSelector:
-        node-role: ai-gateway
       containers:
         - name: litellm
           image: ghcr.io/berriai/litellm:main-latest
@@ -164,8 +162,6 @@ spec:
       labels:
         app: langfuse
     spec:
-      nodeSelector:
-        node-role: ai-gateway
       initContainers:
         # Wait for Postgres to be ready before starting Langfuse
         - name: wait-for-postgres
@@ -306,8 +302,6 @@ spec:
       labels:
         app: langfuse-worker
     spec:
-      nodeSelector:
-        node-role: ai-gateway
       initContainers:
         - name: wait-for-postgres
           image: busybox:1.36
@@ -455,8 +449,6 @@ spec:
       labels:
         app: otel-collector
     spec:
-      nodeSelector:
-        node-role: ai-gateway
       containers:
         - name: otel-collector
           image: otel/opentelemetry-collector-contrib:0.100.0

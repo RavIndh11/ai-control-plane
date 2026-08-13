@@ -20,8 +20,6 @@ spec:
         app: governance-engine
     spec:
       serviceAccountName: governance-engine-sa
-      nodeSelector:
-        node-role: datastore
       initContainers:
         - name: wait-for-postgres
           image: busybox:1.36
@@ -139,8 +137,6 @@ spec:
         app: agent-orchestrator
     spec:
       serviceAccountName: agent-orchestrator-sa
-      nodeSelector:
-        node-role: datastore
       initContainers:
         - name: wait-for-postgres
           image: busybox:1.36
@@ -261,8 +257,6 @@ spec:
       labels:
         app: dashboard
     spec:
-      nodeSelector:
-        node-role: datastore
       containers:
         - name: dashboard
           image: ${REGISTRY}/dashboard:${TAG}
@@ -350,8 +344,6 @@ spec:
         app: mcp-server
     spec:
       serviceAccountName: mcp-server
-      nodeSelector:
-        node-role: ai-gateway
       containers:
         - name: mcp-server
           image: ${REGISTRY}/mcp-server:${TAG}
