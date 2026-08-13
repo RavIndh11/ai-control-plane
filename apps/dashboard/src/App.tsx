@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import Keycloak from 'keycloak-js';
 
@@ -107,8 +107,12 @@ function App() {
   const ORCH_API = process.env.REACT_APP_ORCHESTRATOR_URL || `${window.location.protocol}//${window.location.hostname}:30081`;
 
   // --- Fetch Tenants ---
+  const initRun = useRef(false);
   useEffect(() => {
-    keycloak.init({ onLoad: 'login-required' }).then(auth => {
+    if (initRun.current) return;
+    initRun.current = true;
+    
+    keycloak.init({ onLoad: 'login-required', checkLoginIframe: false }).then(auth => {
       if (auth) {
         const claims = keycloak.tokenParsed as unknown as Record<string, unknown>;
         const tokenTenant = (claims?.tenant_id as string) || 'default';
@@ -116,7 +120,8 @@ function App() {
         setTenants([tokenTenant]);
         setTenantsLoading(false);
       }
-    }).catch(() => {
+    }).catch((e) => {
+      console.error("Keycloak init failed", e);
       setTenantsError(true);
       setTenantsLoading(false);
     });
