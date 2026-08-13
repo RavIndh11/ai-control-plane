@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
+// @ts-ignore
 import Keycloak from 'keycloak-js';
 
 // --- Keycloak Init ---
@@ -111,8 +112,7 @@ function App() {
   useEffect(() => {
     if (initRun.current) return;
     initRun.current = true;
-    
-    keycloak.init({ onLoad: 'login-required', checkLoginIframe: false }).then(auth => {
+    keycloak.init({ onLoad: 'login-required', checkLoginIframe: false }).then((auth: unknown) => {
       if (auth) {
         const claims = keycloak.tokenParsed as unknown as Record<string, unknown>;
         const tokenTenant = (claims?.tenant_id as string) || 'default';
@@ -120,7 +120,7 @@ function App() {
         setTenants([tokenTenant]);
         setTenantsLoading(false);
       }
-    }).catch((e) => {
+    }).catch((e: unknown) => {
       console.error("Keycloak init failed", e);
       setTenantsError(true);
       setTenantsLoading(false);
