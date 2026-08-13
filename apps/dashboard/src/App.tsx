@@ -4,7 +4,7 @@ import Keycloak from 'keycloak-js';
 
 // --- Keycloak Init ---
 const keycloak = new Keycloak({
-  url: process.env.REACT_APP_KEYCLOAK_URL || `${window.location.protocol}//${window.location.hostname}:30083`,
+  url: process.env.REACT_APP_KEYCLOAK_URL || `${window.location.protocol}//${window.location.hostname}:30084`,
   realm: 'master',
   clientId: 'dashboard'
 });
@@ -1033,7 +1033,7 @@ function App() {
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '15px' }}>
                   View LangGraph traces, generations, and evaluation scores.
                 </p>
-                <a href={`${window.location.protocol}//${window.location.hostname}:30083`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
+                <a href={`${window.location.protocol}//${window.location.hostname}:30084`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
                   Open Langfuse UI
                 </a>
               </div>

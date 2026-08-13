@@ -270,7 +270,7 @@ spec:
             - name: REACT_APP_GOVERNANCE_URL
               value: "http://${MASTER_NODE_IP}:30080"
             - name: REACT_APP_KEYCLOAK_URL
-              value: "http://${MASTER_NODE_IP}:30083"
+              value: "http://${MASTER_NODE_IP}:30084"
           readinessProbe:
             httpGet:
               path: /
