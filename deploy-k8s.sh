@@ -121,46 +121,6 @@ kubectl rollout status deployment/minio    -n "$NAMESPACE" --timeout=60s
 kubectl rollout status deployment/qdrant   -n "$NAMESPACE" --timeout=60s
 echo "  ✅ Datastores ready"
 
-apply_template k8s/templates/02-platform.yaml
-echo "  ⏳ Waiting for platform services..."
-kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
-echo "  ✅ Platform services ready"
-
-apply_template k8s/templates/06-keycloak.yaml
-kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=300s
-echo "  ✅ Keycloak ready"
-
-
-apply_template k8s/templates/03-apps.yaml
-echo "  ⏳ Rolling restart to pick up new images..."
-kubectl rollout restart deployment/governance-engine  -n "$NAMESPACE"
-kubectl rollout restart deployment/agent-orchestrator -n "$NAMESPACE"
-kubectl rollout restart deployment/dashboard          -n "$NAMESPACE"
-kubectl rollout restart deployment/mcp-server         -n "$NAMESPACE" 2>/dev/null || true
-echo "  ⏳ Waiting for application pods..."
-if ! kubectl rollout status deployment/governance-engine  -n "$NAMESPACE" --timeout=120s; then
-    echo "❌ Governance Engine failed to roll out! Diagnostics:"
-    kubectl describe pod -l app=governance-engine -n "$NAMESPACE"
-    kubectl logs -l app=governance-engine -n "$NAMESPACE" --all-containers
-    exit 1
-fi
-if ! kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --timeout=120s; then
-    echo "❌ Agent Orchestrator failed to roll out! Diagnostics:"
-    kubectl describe pod -l app=agent-orchestrator -n "$NAMESPACE"
-    kubectl logs -l app=agent-orchestrator -n "$NAMESPACE" --all-containers
-    exit 1
-fi
-kubectl rollout status deployment/dashboard          -n "$NAMESPACE" --timeout=60s
-kubectl rollout status deployment/mcp-server -n "$NAMESPACE" --timeout=60s
-echo "  ✅ Applications ready"
-
-apply_template k8s/templates/04-observability.yaml
-echo "  ⏳ Waiting for observability stack..."
-kubectl rollout status deployment/loki -n "$NAMESPACE" --timeout=120s
-kubectl rollout status daemonset/promtail -n "$NAMESPACE" --timeout=120s
-echo "  ✅ Observability stack ready"
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # 6. Run schema migration on PostgreSQL
 # ─────────────────────────────────────────────────────────────────────────────
@@ -207,6 +167,46 @@ kubectl exec -n "$NAMESPACE" "$MINIO_POD" -- \
     sh -c "mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD 2>/dev/null; \
            mc mb local/manifold-evidence 2>/dev/null || true; \
            echo 'Bucket ready'" || echo "  ⚠️  MinIO bucket setup skipped (mc not in image — use web UI at :30090)"
+
+
+apply_template k8s/templates/02-platform.yaml
+echo "  ⏳ Waiting for platform services..."
+kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
+echo "  ✅ Platform services ready"
+
+apply_template k8s/templates/06-keycloak.yaml
+kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=300s
+echo "  ✅ Keycloak ready"
+
+
+apply_template k8s/templates/03-apps.yaml
+echo "  ⏳ Rolling restart to pick up new images..."
+kubectl rollout restart deployment/governance-engine  -n "$NAMESPACE"
+kubectl rollout restart deployment/agent-orchestrator -n "$NAMESPACE"
+kubectl rollout restart deployment/dashboard          -n "$NAMESPACE"
+kubectl rollout restart deployment/mcp-server         -n "$NAMESPACE" 2>/dev/null || true
+echo "  ⏳ Waiting for application pods..."
+if ! kubectl rollout status deployment/governance-engine  -n "$NAMESPACE" --timeout=120s; then
+    echo "❌ Governance Engine failed to roll out! Diagnostics:"
+    kubectl describe pod -l app=governance-engine -n "$NAMESPACE"
+    kubectl logs -l app=governance-engine -n "$NAMESPACE" --all-containers
+    exit 1
+fi
+if ! kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --timeout=120s; then
+    echo "❌ Agent Orchestrator failed to roll out! Diagnostics:"
+    kubectl describe pod -l app=agent-orchestrator -n "$NAMESPACE"
+    kubectl logs -l app=agent-orchestrator -n "$NAMESPACE" --all-containers
+    exit 1
+fi
+kubectl rollout status deployment/dashboard          -n "$NAMESPACE" --timeout=60s
+kubectl rollout status deployment/mcp-server -n "$NAMESPACE" --timeout=60s
+echo "  ✅ Applications ready"
+
+apply_template k8s/templates/04-observability.yaml
+echo "  ⏳ Waiting for observability stack..."
+kubectl rollout status deployment/loki -n "$NAMESPACE" --timeout=120s
+kubectl rollout status daemonset/promtail -n "$NAMESPACE" --timeout=120s
+echo "  ✅ Observability stack ready"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
