@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import Keycloak from 'keycloak-js';
+
+// --- Keycloak Init ---
+const keycloak = new Keycloak({
+  url: process.env.REACT_APP_KEYCLOAK_URL || `${window.location.protocol}//${window.location.hostname}:30083`,
+  realm: 'master',
+  clientId: 'dashboard'
+});
 
 // --- Types & Interfaces ---
 interface Evidence {
@@ -62,7 +70,10 @@ interface TopologyLink {
 }
 
 function App() {
-  // Navigation & Tenant States
+  // --- Auth State ---
+  const [keycloakInitialized, setKeycloakInitialized] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
+  
   const [activeTab, setActiveTab] = useState<'dashboard' | 'aibom' | 'topology' | 'playground' | 'system-links'>('dashboard');
   const [selectedTenant, setSelectedTenant] = useState<string>('');
   const [tenants, setTenants] = useState<string[]>([]);
@@ -99,39 +110,40 @@ function App() {
 
   // --- Fetch Tenants ---
   useEffect(() => {
-    const fetchTenants = async () => {
-      try {
-        const res = await fetch(`${GOV_API}/api/v1/tenants`, {
-          headers: {
-            'X-Tenant-ID': 'system-admin',
-            'X-User-Role': 'platform-admin'
-          }
-        });
-        if (!res.ok) throw new Error('Failed to fetch tenants');
-        const data = await res.json();
-        const tenantIds = data.tenants || data;
-        setTenants(tenantIds);
-        if (tenantIds.length > 0) {
-          setSelectedTenant(tenantIds[0].id || tenantIds[0]); // Adjust based on actual API response, usually string[] or object with id
-        }
-      } catch (err) {
-        setTenantsError(true);
-      } finally {
+    keycloak.init({ onLoad: 'login-required' }).then(auth => {
+      setAuthenticated(auth);
+      setKeycloakInitialized(true);
+      if (auth) {
+        const claims = keycloak.tokenParsed as unknown as Record<string, unknown>;
+        const tokenTenant = (claims?.tenant_id as string) || 'default';
+        setSelectedTenant(tokenTenant);
+        setTenants([tokenTenant]);
         setTenantsLoading(false);
       }
-    };
-    fetchTenants();
-  }, [GOV_API]);
+    }).catch(() => {
+      setTenantsError(true);
+      setTenantsLoading(false);
+    });
+  }, []);
+
+  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
+    if (!keycloak.token) throw new Error('Not authenticated');
+    await keycloak.updateToken(30);
+    
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', `Bearer ${keycloak.token}`);
+    
+    return fetch(url, { ...options, headers });
+  };
 
   // --- Check Backend Connection ---
   useEffect(() => {
     if (!selectedTenant) return;
     const checkConnections = async () => {
       try {
-        const govHealth = await fetch(`${GOV_API}/health`, { mode: 'cors' });
-        const orchHealth = await fetch(`${ORCH_API}/`, { mode: 'cors' });
+        const govHealth = await fetchWithAuth(`${GOV_API}/health`, { mode: 'cors' });
+        const orchHealth = await fetchWithAuth(`${ORCH_API}/health`, { mode: 'cors' });
         if (govHealth.status === 200 && orchHealth.status === 200) {
-          setIsLive(true);
           fetchLiveDashboardData();
         } else {
           setIsLive(false);
@@ -158,12 +170,7 @@ function App() {
 
   const fetchEvidenceLogs = async () => {
     try {
-      const res = await fetch(`${GOV_API}/api/v1/evidence?tenant_id=${selectedTenant}&limit=100`, {
-        headers: {
-          'X-Tenant-ID': selectedTenant,
-          'X-User-Role': 'tenant-admin'
-        }
-      });
+      const res = await fetchWithAuth(`${GOV_API}/api/v1/evidence?tenant_id=${selectedTenant}&limit=100`);
       if (res.ok) {
         const data = await res.json();
         setEvidenceLogs(data.items || data.logs || []);
@@ -177,33 +184,18 @@ function App() {
   const fetchLiveDashboardData = async () => {
     try {
       // 1. Fetch compliance status
-      const res = await fetch(`${GOV_API}/api/v1/compliance/status`, {
-        headers: { 
-          'X-Tenant-ID': selectedTenant,
-          'X-User-Role': 'tenant-admin' 
-        }
-      });
+      const res = await fetchWithAuth(`${GOV_API}/api/v1/compliance/status`);
       const data = await res.json();
       
       setControls(data.controls || []); // Overwrite completely rather than mapping over initial since initial is removed
 
       // 2. Fetch AI-BOM Inventory
-      const bomRes = await fetch(`${GOV_API}/api/v1/compliance/ai-bom`, {
-        headers: { 
-          'X-Tenant-ID': selectedTenant,
-          'X-User-Role': 'tenant-admin' 
-        }
-      });
+      const bomRes = await fetchWithAuth(`${GOV_API}/api/v1/compliance/ai-bom`);
       const bomData = await bomRes.json();
       setAibomAssets(bomData.assets || []);
 
       // 3. Fetch Topology Graph Network
-      const topRes = await fetch(`${GOV_API}/api/v1/compliance/topology`, {
-        headers: { 
-          'X-Tenant-ID': selectedTenant,
-          'X-User-Role': 'tenant-admin' 
-        }
-      });
+      const topRes = await fetchWithAuth(`${GOV_API}/api/v1/compliance/topology`);
       const topData = await topRes.json();
       setTopologyNodes(topData.nodes || []);
       setTopologyLinks(topData.links || []);
@@ -226,11 +218,10 @@ function App() {
     
     if (isLive) {
       try {
-        const res = await fetch(`${ORCH_API}/api/v1/threads`, {
+        const res = await fetchWithAuth(`${ORCH_API}/api/v1/threads`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Tenant-ID': selectedTenant
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({ agent_type: agentType })
         });
@@ -283,11 +274,10 @@ function App() {
 
     if (isLive) {
       try {
-        const res = await fetch(`${ORCH_API}/api/v1/threads/${activeThreadId}/runs`, {
+        const res = await fetchWithAuth(`${ORCH_API}/api/v1/threads/${activeThreadId}/runs`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-Tenant-ID': selectedTenant
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify({ input: text })
         });

@@ -18,7 +18,8 @@ from agents.state import AgentState
 
 LLM_GATEWAY_URL: str       = os.getenv("LLM_GATEWAY_URL",       "http://localhost:4000/v1")
 LLM_MODEL: str             = os.getenv("LLM_MODEL",             "mistral-cpu")
-MCP_SERVER_URL: str        = os.getenv("MCP_SERVER_URL",        "http://mcp-server.control-plane.svc.cluster.local:8002")
+NAMESPACE: str             = os.getenv("NAMESPACE", "default")
+MCP_SERVER_URL: str        = os.getenv("MCP_SERVER_URL",        f"http://mcp-server.{NAMESPACE}.svc.cluster.local:8002")
 GOVERNANCE_ENGINE_URL: str = os.getenv("GOVERNANCE_ENGINE_URL", "http://localhost:8000")
 
 
@@ -222,7 +223,8 @@ def agent_node(state: AgentState) -> AgentState:
                 print(f"[Reasoning] LLM gateway returned {res.status_code}: {res.text[:200]}")
 
     except Exception as exc:
-        print(f"[Reasoning] LLM gateway unreachable ({exc}). Skipping ReAct.")
+        print(f"[Reasoning] LLM gateway unreachable ({exc}).")
+        raise
 
     langfuse_context.update_current_observation(
         output={

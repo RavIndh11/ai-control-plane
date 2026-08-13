@@ -37,8 +37,6 @@ spec:
       labels:
         app: postgres
     spec:
-      nodeSelector:
-        node-role: datastore  # Pins to Worker 2 (150 GB disk)
       containers:
         - name: postgres
           image: pgvector/pgvector:pg16
@@ -119,8 +117,6 @@ spec:
       labels:
         app: redis
     spec:
-      nodeSelector:
-        node-role: datastore
       containers:
         - name: redis
           image: redis:7-alpine
@@ -196,8 +192,6 @@ spec:
       labels:
         app: minio
     spec:
-      nodeSelector:
-        node-role: datastore
       containers:
         - name: minio
           image: minio/minio:RELEASE.2024-01-28T22-35-53Z
@@ -284,8 +278,6 @@ spec:
       labels:
         app: qdrant
     spec:
-      nodeSelector:
-        node-role: datastore
       containers:
         - name: qdrant
           image: qdrant/qdrant:v1.8.4
@@ -369,8 +361,6 @@ spec:
       labels:
         app: clickhouse
     spec:
-      nodeSelector:
-        node-role: datastore
       containers:
         - name: clickhouse
           image: clickhouse/clickhouse-server:24.3-alpine
@@ -387,6 +377,12 @@ spec:
           volumeMounts:
             - name: clickhouse-storage
               mountPath: /var/lib/clickhouse
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8123
+            initialDelaySeconds: 10
+            periodSeconds: 15
           resources:
             requests:
               cpu: "500m"

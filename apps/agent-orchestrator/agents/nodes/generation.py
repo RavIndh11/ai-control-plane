@@ -17,14 +17,8 @@ QDRANT_URL: str       = os.getenv("QDRANT_URL",        "")
 QDRANT_COLLECTION:str = os.getenv("QDRANT_COLLECTION", "manifold_kb")
 EMBEDDING_MODEL: str  = os.getenv("EMBEDDING_MODEL",   "qwen3-embedding")
 
-_qdrant_client = None
-if QDRANT_URL:
-    try:
-        from qdrant_client import QdrantClient
-        _qdrant_client = QdrantClient(url=QDRANT_URL, timeout=3.0)
-    except Exception as exc:
-        print(f"[Generation] Qdrant client init failed: {exc}")
-
+from qdrant_client import QdrantClient
+_qdrant_client = QdrantClient(url=QDRANT_URL, timeout=3.0) if QDRANT_URL else None
 # Optional Langfuse tracing
 try:
     from langfuse import observe
@@ -37,25 +31,19 @@ class langfuse_context:  # type: ignore[no-redef]
     @staticmethod
     def update_current_observation(**_: Any) -> None: pass
 
-# Optional Guardrails AI
-try:
-    from guardrails import Guard
-    from guardrails.validators import Validator, register_validator, ValidationResult, Pass, Fail
-    import re
-    _HAS_GUARDRAILS = True
+from guardrails import Guard
+from guardrails.validators import Validator, register_validator, ValidationResult, Pass, Fail
+import re
+_HAS_GUARDRAILS = True
 
-    @register_validator(name="secret_data_check", data_type="string")
-    class SecretDataCheck(Validator):
-        def validate(self, value: Any, metadata: dict = {}) -> ValidationResult:
-            forbidden = [r"BEGIN RSA PRIVATE KEY", r"sk-[a-zA-Z0-9]{20,}", r"AKIA[0-9A-Z]{16}"]
-            for pattern in forbidden:
-                if re.search(pattern, value):
-                    return Fail(error_message="Output contains sensitive secrets or keys.")
-            return Pass()
-
-except ImportError:
-    _HAS_GUARDRAILS = False
-
+@register_validator(name="secret_data_check", data_type="string")
+class SecretDataCheck(Validator):
+    def validate(self, value: Any, metadata: dict = {}) -> ValidationResult:
+        forbidden = [r"BEGIN RSA PRIVATE KEY", r"sk-[a-zA-Z0-9]{20,}", r"AKIA[0-9A-Z]{16}"]
+        for pattern in forbidden:
+            if re.search(pattern, value):
+                return Fail(error_message="Output contains sensitive secrets or keys.")
+        return Pass()
 
 
 def _rag_context(user_input: str, tenant_id: str) -> str:
@@ -105,8 +93,6 @@ def generation_node(state: AgentState) -> AgentState:
 
     if not state.get("is_safe"):
         return state
-    if "governance_shield_interrupt" in state.get("steps", []):
-        return state
     if state.get("output"):
         return state
 
@@ -134,7 +120,6 @@ def generation_node(state: AgentState) -> AgentState:
     output = ""
     try:
         with httpx.Client(timeout=120.0) as client:
-            from auth.litellm_keys import get_virtual_key_for_tenant
             api_key = get_virtual_key_for_tenant(tenant_id)
             
             res = client.post(
@@ -167,9 +152,8 @@ def generation_node(state: AgentState) -> AgentState:
             output = "Error: The generated response was blocked by output safety guardrails."
             state["is_safe"] = False
         else:
-            print(f"[Generation] LLM Gateway unreachable ({exc}). Using fallback response.")
-            output = f"Processed query for tenant '{tenant_id}' successfully."
-
+            print(f"[Generation] LLM Gateway unreachable ({exc}).")
+            raise
     state["output"] = output
 
     langfuse_context.update_current_observation(

@@ -126,17 +126,9 @@ echo "  ⏳ Waiting for platform services..."
 kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
-    exit 1
-fi
-    exit 1
-fi
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 7. Register workload identities in SPIRE (MUST run before apps restart)
-# ─────────────────────────────────────────────────────────────────────────────
-echo ""
-echo "  Registering workload identities..."
-echo "  ✅ Configured Envoy Sidecars and Registered Identities"
+apply_template k8s/templates/06-keycloak.yaml
+kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=120s
+echo "  ✅ Keycloak ready"
 
 
 apply_template k8s/templates/03-apps.yaml
@@ -159,6 +151,7 @@ if ! kubectl rollout status deployment/agent-orchestrator -n "$NAMESPACE" --time
     exit 1
 fi
 kubectl rollout status deployment/dashboard          -n "$NAMESPACE" --timeout=60s
+kubectl rollout status deployment/mcp-server -n "$NAMESPACE" --timeout=60s
 echo "  ✅ Applications ready"
 
 apply_template k8s/templates/04-observability.yaml

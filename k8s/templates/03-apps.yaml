@@ -36,9 +36,6 @@ spec:
           volumeMounts:
             - name: envoy-config
               mountPath: /etc/envoy
-            - name: spire-agent-socket
-              mountPath: /run/spire/sockets
-              readOnly: true
         - name: governance-engine
           image: ${REGISTRY}/governance-engine:${TAG}
           imagePullPolicy: Always
@@ -80,6 +77,12 @@ spec:
               value: "http://otel-collector.${NAMESPACE}.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAME
               value: "governance-engine"
+            - name: KEYCLOAK_JWKS_URL
+              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+            - name: KEYCLOAK_AUDIENCE
+              value: "${KEYCLOAK_AUDIENCE}"
+            - name: KEYCLOAK_ISSUER
+              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master"
           readinessProbe:
             httpGet:
               path: /health
@@ -97,10 +100,6 @@ spec:
         - name: envoy-config
           configMap:
             name: envoy-config-gov
-        - name: spire-agent-socket
-          hostPath:
-            path: /run/spire/sockets
-            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -156,9 +155,6 @@ spec:
           volumeMounts:
             - name: envoy-config
               mountPath: /etc/envoy
-            - name: spire-agent-socket
-              mountPath: /run/spire/sockets
-              readOnly: true
         - name: agent-orchestrator
           image: ${REGISTRY}/agent-orchestrator:${TAG}
           imagePullPolicy: Always
@@ -169,7 +165,9 @@ spec:
             - name: DATABASE_URL
               value: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres.${NAMESPACE}.svc.cluster.local:5432/${POSTGRES_DB}"
             - name: GOVERNANCE_ENGINE_URL
-              value: "http://127.0.0.1:8000"
+              value: "http://governance-engine.${NAMESPACE}.svc.cluster.local:8000"
+            - name: MCP_SERVER_URL
+              value: "http://mcp-server.${NAMESPACE}.svc.cluster.local:8002"
             - name: LLM_GATEWAY_URL
               value: "http://litellm.${NAMESPACE}.svc.cluster.local:4000/v1"
             - name: LLM_MODEL
@@ -205,6 +203,12 @@ spec:
               value: "agent-orchestrator"
             - name: LITELLM_MASTER_KEY
               value: "sk-litellm-master-secure-pass"
+            - name: KEYCLOAK_JWKS_URL
+              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+            - name: KEYCLOAK_AUDIENCE
+              value: "${KEYCLOAK_AUDIENCE}"
+            - name: KEYCLOAK_ISSUER
+              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master"
           readinessProbe:
             httpGet:
               path: /health
@@ -222,10 +226,6 @@ spec:
         - name: envoy-config
           configMap:
             name: envoy-config-orchestrator
-        - name: spire-agent-socket
-          hostPath:
-            path: /run/spire/sockets
-            type: DirectoryOrCreate
 ---
 apiVersion: v1
 kind: Service
@@ -269,6 +269,8 @@ spec:
               value: "http://${MASTER_NODE_IP}:30081"
             - name: REACT_APP_GOVERNANCE_URL
               value: "http://${MASTER_NODE_IP}:30080"
+            - name: REACT_APP_KEYCLOAK_URL
+              value: "http://${MASTER_NODE_IP}:30083"
           readinessProbe:
             httpGet:
               path: /
@@ -352,6 +354,8 @@ spec:
             - containerPort: 8002
               name: http
           env:
+            - name: GOVERNANCE_ENGINE_URL
+              value: "http://governance-engine.${NAMESPACE}.svc.cluster.local:8000"
           readinessProbe:
             httpGet:
               path: /health

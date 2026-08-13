@@ -1,7 +1,7 @@
 # 02-platform.yaml
-# Platform services: Cerbos (ABAC), LiteLLM (AI gateway),
-# Langfuse (LLM observability), OTel Collector, Ollama ExternalName.
-# Cerbos / LiteLLM / Langfuse / OTel all run on Worker 1 (node-role=ai-gateway).
+# Platform services: LiteLLM (AI gateway), Langfuse (LLM observability),
+# OTel Collector, Ollama ExternalName.
+# LiteLLM / Langfuse / OTel all run on Worker 1 (node-role=ai-gateway).
 
 # ── LiteLLM AI Gateway ────────────────────────────────────────────────────
 apiVersion: v1
@@ -382,6 +382,11 @@ spec:
               value: "false"
             - name: NODE_OPTIONS
               value: "--max-old-space-size=1024"
+          readinessProbe:
+            exec:
+              command: ["pgrep", "-f", "langfuse"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
           resources:
             requests:
               cpu: "250m"
@@ -461,6 +466,12 @@ spec:
           volumeMounts:
             - name: otel-config
               mountPath: /etc/otel
+          readinessProbe:
+            httpGet:
+              path: /v1/health
+              port: 13133
+            initialDelaySeconds: 10
+            periodSeconds: 15
           resources:
             requests:
               cpu: "100m"

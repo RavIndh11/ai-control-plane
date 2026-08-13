@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: ${NAMESPACE}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.0
+          args: ["start-dev", "--spi-connections-http-default-disable-trust-manager"]
+          env:
+            - name: KC_DB
+              value: "postgres"
+            - name: KC_DB_URL
+              value: "jdbc:postgresql://postgres.${NAMESPACE}.svc.cluster.local:5432/keycloak"
+            - name: KC_DB_USERNAME
+              value: "${POSTGRES_USER}"
+            - name: KC_DB_PASSWORD
+              value: "${POSTGRES_PASSWORD}"
+            - name: KEYCLOAK_ADMIN
+              value: "${KEYCLOAK_ADMIN_USER}"
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: "${KEYCLOAK_ADMIN_PASSWORD}"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 9000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: ${NAMESPACE}
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30083
+  selector:
+    app: keycloak

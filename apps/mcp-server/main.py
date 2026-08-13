@@ -1,6 +1,8 @@
 import os
 import logging
-from typing import Any
+import uuid
+from datetime import datetime
+import httpx
 from fastapi import FastAPI, Request
 import mcp.types as types
 from mcp.server import Server
@@ -110,6 +112,24 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
         return [types.TextContent(type="text", text=text_val)]
     except Exception as e:
         if "GovernanceDenied" in str(type(e).__name__):
+            gov_url = os.getenv("GOVERNANCE_ENGINE_URL", "http://governance-engine.default.svc.cluster.local:8000")
+            try:
+                httpx.post(
+                    f"{gov_url}/api/v1/agt/audit_logs",
+                    json={
+                        "run_id": str(uuid.uuid4()),
+                        "agent_id": "mcp-server",
+                        "tool_name": name,
+                        "action_type": name,
+                        "verdict": "deny",
+                        "reason": str(e),
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "payload": {"tool": name, "arguments": arguments}
+                    },
+                    timeout=2.0
+                )
+            except Exception as post_exc:
+                logging.error(f"Failed to post audit log to {gov_url}: {post_exc}")
             return [types.TextContent(type="text", text=f"ERROR: Authorization denied by AGT: {e}")]
         raise
 
