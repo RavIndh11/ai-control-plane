@@ -123,7 +123,6 @@ echo "  ✅ Datastores ready"
 
 apply_template k8s/templates/02-platform.yaml
 echo "  ⏳ Waiting for platform services..."
-kubectl rollout status deployment/cerbos        -n "$NAMESPACE" --timeout=90s
 kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
