@@ -16,7 +16,7 @@ spec:
       containers:
         - name: keycloak
           image: quay.io/keycloak/keycloak:26.0
-          args: ["start-dev", "--spi-connections-http-default-disable-trust-manager"]
+          args: ["start-dev", "--spi-connections-http-default-disable-trust-manager=true"]
           env:
             - name: KC_DB
               value: "postgres"
