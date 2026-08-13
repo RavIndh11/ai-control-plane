@@ -127,7 +127,7 @@ kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
 
 apply_template k8s/templates/06-keycloak.yaml
-kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=120s
+kubectl rollout status deployment/keycloak -n "$NAMESPACE" --timeout=300s
 echo "  ✅ Keycloak ready"
 
 
