@@ -14,6 +14,7 @@ from typing import Any, Dict
 
 import httpx
 
+from auth.litellm_keys import get_virtual_key_for_tenant
 from agents.state import AgentState
 
 LLM_GATEWAY_URL: str       = os.getenv("LLM_GATEWAY_URL",       "http://localhost:4000/v1")
@@ -180,7 +181,6 @@ def agent_node(state: AgentState) -> AgentState:
                 payload["tools"] = dynamic_tools
                 payload["tool_choice"] = "auto"
                 
-            from auth.litellm_keys import get_virtual_key_for_tenant
             api_key = get_virtual_key_for_tenant(tenant_id)
             
             res = client.post(

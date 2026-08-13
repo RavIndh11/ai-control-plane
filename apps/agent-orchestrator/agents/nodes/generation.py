@@ -10,6 +10,7 @@ from typing import Any
 import httpx
 
 from agents.state import AgentState
+from auth.litellm_keys import get_virtual_key_for_tenant
 
 LLM_GATEWAY_URL: str  = os.getenv("LLM_GATEWAY_URL", "http://localhost:4000/v1")
 LLM_MODEL: str        = os.getenv("LLM_MODEL",        "mistral-cpu")
@@ -32,7 +33,7 @@ class langfuse_context:  # type: ignore[no-redef]
     def update_current_observation(**_: Any) -> None: pass
 
 from guardrails import Guard
-from guardrails.validators import Validator, register_validator, ValidationResult, Pass, Fail
+from guardrails.validators import Validator, register_validator, ValidationResult, PassResult, FailResult
 import re
 _HAS_GUARDRAILS = True
 
@@ -42,8 +43,8 @@ class SecretDataCheck(Validator):
         forbidden = [r"BEGIN RSA PRIVATE KEY", r"sk-[a-zA-Z0-9]{20,}", r"AKIA[0-9A-Z]{16}"]
         for pattern in forbidden:
             if re.search(pattern, value):
-                return Fail(error_message="Output contains sensitive secrets or keys.")
-        return Pass()
+                return FailResult(error_message="Output contains sensitive secrets or keys.")
+        return PassResult()
 
 
 def _rag_context(user_input: str, tenant_id: str) -> str:
@@ -53,7 +54,6 @@ def _rag_context(user_input: str, tenant_id: str) -> str:
     try:
         # Embed via LiteLLM (same gateway)
         with httpx.Client(timeout=2.0) as client:
-            from auth.litellm_keys import get_virtual_key_for_tenant
             api_key = get_virtual_key_for_tenant(tenant_id)
             res = client.post(
                 f"{LLM_GATEWAY_URL}/embeddings",
