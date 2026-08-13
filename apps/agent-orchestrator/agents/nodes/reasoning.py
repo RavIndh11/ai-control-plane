@@ -237,7 +237,8 @@ def agent_node(state: AgentState) -> AgentState:
 
     except Exception as exc:
         print(f"[Reasoning] LLM gateway unreachable ({exc}).")
-        raise
+        from fastapi import HTTPException
+        raise HTTPException(status_code=502, detail=f"LLM Gateway unreachable: {exc}")
 
     langfuse_context.update_current_observation(
         output={

@@ -153,7 +153,8 @@ def generation_node(state: AgentState) -> AgentState:
             state["is_safe"] = False
         else:
             print(f"[Generation] LLM Gateway unreachable ({exc}).")
-            raise
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=f"LLM Gateway unreachable: {exc}")
     state["output"] = output
 
     langfuse_context.update_current_observation(
