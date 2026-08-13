@@ -234,6 +234,8 @@ def agent_node(state: AgentState) -> AgentState:
                         print("[ReAct] LLM answered directly (no tool call).")
             else:
                 print(f"[Reasoning] LLM gateway returned {res.status_code}: {res.text[:200]}")
+                from fastapi import HTTPException
+                raise HTTPException(status_code=502, detail=f"LLM gateway error {res.status_code}: {res.text[:200]}")
 
     except Exception as exc:
         print(f"[Reasoning] LLM gateway unreachable ({exc}).")
