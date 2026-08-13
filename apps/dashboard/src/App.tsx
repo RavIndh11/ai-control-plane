@@ -1,14 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
-// @ts-ignore
-import Keycloak from 'keycloak-js';
-
-// --- Keycloak Init ---
-const keycloak = new Keycloak({
-  url: process.env.REACT_APP_KEYCLOAK_URL || `${window.location.protocol}//${window.location.hostname}:30084`,
-  realm: 'master',
-  clientId: 'dashboard'
-});
 
 // --- Types & Interfaces ---
 interface Evidence {
@@ -71,8 +62,7 @@ interface TopologyLink {
 }
 
 function App() {
-  // --- Auth State ---
-  
+  // Navigation & Tenant States
   const [activeTab, setActiveTab] = useState<'dashboard' | 'aibom' | 'topology' | 'playground' | 'system-links'>('dashboard');
   const [selectedTenant, setSelectedTenant] = useState<string>('');
   const [tenants, setTenants] = useState<string[]>([]);
@@ -108,41 +98,38 @@ function App() {
   const ORCH_API = process.env.REACT_APP_ORCHESTRATOR_URL || `${window.location.protocol}//${window.location.hostname}:30081`;
 
   // --- Fetch Tenants ---
-  const initRun = useRef(false);
   useEffect(() => {
-    if (initRun.current) return;
-    initRun.current = true;
-    keycloak.init({ onLoad: 'login-required', checkLoginIframe: false }).then((auth: unknown) => {
-      if (auth) {
-        const claims = keycloak.tokenParsed as unknown as Record<string, unknown>;
-        const tokenTenant = (claims?.tenant_id as string) || 'default';
-        setSelectedTenant(tokenTenant);
-        setTenants([tokenTenant]);
+    const fetchTenants = async () => {
+      try {
+        const res = await fetch(`${GOV_API}/api/v1/tenants`, {
+          headers: {
+            'X-Tenant-ID': 'system-admin',
+            'X-User-Role': 'platform-admin'
+          }
+        });
+        if (!res.ok) throw new Error('Failed to fetch tenants');
+        const data = await res.json();
+        const tenantIds = data.tenants || data;
+        setTenants(tenantIds);
+        if (tenantIds.length > 0) {
+          setSelectedTenant(tenantIds[0].id || tenantIds[0]); // Adjust based on actual API response, usually string[] or object with id
+        }
+      } catch (err) {
+        setTenantsError(true);
+      } finally {
         setTenantsLoading(false);
       }
-    }).catch((e: unknown) => {
-      console.error("Keycloak init failed", e);
-      setTenantsError(true);
-      setTenantsLoading(false);
-    });
-  }, []);
+    };
+    fetchTenants();
+  }, [GOV_API]);
 
-  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    if (!keycloak.token) throw new Error('Not authenticated');
-    await keycloak.updateToken(30);
-    
-    const headers = new Headers(options.headers || {});
-    headers.set('Authorization', `Bearer ${keycloak.token}`);
-    
-    return fetch(url, { ...options, headers });
-  };
   // --- Check Backend Connection ---
   useEffect(() => {
     if (!selectedTenant) return;
     const checkConnections = async () => {
       try {
-        const govHealth = await fetchWithAuth(`${GOV_API}/health`, { mode: 'cors' });
-        const orchHealth = await fetchWithAuth(`${ORCH_API}/health`, { mode: 'cors' });
+        const govHealth = await fetch(`${GOV_API}/health`, { mode: 'cors' });
+        const orchHealth = await fetch(`${ORCH_API}/`, { mode: 'cors' });
         if (govHealth.status === 200 && orchHealth.status === 200) {
           setIsLive(true);
           fetchLiveDashboardData();
@@ -171,7 +158,12 @@ function App() {
 
   const fetchEvidenceLogs = async () => {
     try {
-      const res = await fetchWithAuth(`${GOV_API}/api/v1/evidence?tenant_id=${selectedTenant}&limit=100`);
+      const res = await fetch(`${GOV_API}/api/v1/evidence?tenant_id=${selectedTenant}&limit=100`, {
+        headers: {
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin'
+        }
+      });
       if (res.ok) {
         const data = await res.json();
         setEvidenceLogs(data.items || data.logs || []);
@@ -185,18 +177,33 @@ function App() {
   const fetchLiveDashboardData = async () => {
     try {
       // 1. Fetch compliance status
-      const res = await fetchWithAuth(`${GOV_API}/api/v1/compliance/status`);
+      const res = await fetch(`${GOV_API}/api/v1/compliance/status`, {
+        headers: { 
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin' 
+        }
+      });
       const data = await res.json();
       
       setControls(data.controls || []); // Overwrite completely rather than mapping over initial since initial is removed
 
       // 2. Fetch AI-BOM Inventory
-      const bomRes = await fetchWithAuth(`${GOV_API}/api/v1/compliance/ai-bom`);
+      const bomRes = await fetch(`${GOV_API}/api/v1/compliance/ai-bom`, {
+        headers: { 
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin' 
+        }
+      });
       const bomData = await bomRes.json();
       setAibomAssets(bomData.assets || []);
 
       // 3. Fetch Topology Graph Network
-      const topRes = await fetchWithAuth(`${GOV_API}/api/v1/compliance/topology`);
+      const topRes = await fetch(`${GOV_API}/api/v1/compliance/topology`, {
+        headers: { 
+          'X-Tenant-ID': selectedTenant,
+          'X-User-Role': 'tenant-admin' 
+        }
+      });
       const topData = await topRes.json();
       setTopologyNodes(topData.nodes || []);
       setTopologyLinks(topData.links || []);
@@ -219,10 +226,11 @@ function App() {
     
     if (isLive) {
       try {
-        const res = await fetchWithAuth(`${ORCH_API}/api/v1/threads`, {
+        const res = await fetch(`${ORCH_API}/api/v1/threads`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Tenant-ID': selectedTenant
           },
           body: JSON.stringify({ agent_type: agentType })
         });
@@ -275,10 +283,11 @@ function App() {
 
     if (isLive) {
       try {
-        const res = await fetchWithAuth(`${ORCH_API}/api/v1/threads/${activeThreadId}/runs`, {
+        const res = await fetch(`${ORCH_API}/api/v1/threads/${activeThreadId}/runs`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Tenant-ID': selectedTenant
           },
           body: JSON.stringify({ input: text })
         });
@@ -1040,16 +1049,6 @@ function App() {
                 </p>
                 <a href={`${window.location.protocol}//${window.location.hostname}:30083`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
                   Open Langfuse UI
-                </a>
-              </div>
-
-              <div className="card" style={{ padding: '20px', border: '1px solid var(--border-color)', borderRadius: '12px', background: 'var(--bg-secondary)' }}>
-                <h3 style={{ marginBottom: '10px' }}>Keycloak IAM</h3>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '15px' }}>
-                  Identity and Access Management for the Control Plane.
-                </p>
-                <a href={process.env.REACT_APP_KEYCLOAK_URL || `${window.location.protocol}//${window.location.hostname}:30084`} target="_blank" rel="noreferrer" className="send-btn" style={{ textDecoration: 'none', display: 'inline-block', textAlign: 'center', width: '100%' }}>
-                  Open Keycloak
                 </a>
               </div>
 
