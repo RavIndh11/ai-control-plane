@@ -136,7 +136,6 @@ function App() {
     
     return fetch(url, { ...options, headers });
   };
-
   // --- Check Backend Connection ---
   useEffect(() => {
     if (!selectedTenant) return;
@@ -145,6 +144,7 @@ function App() {
         const govHealth = await fetchWithAuth(`${GOV_API}/health`, { mode: 'cors' });
         const orchHealth = await fetchWithAuth(`${ORCH_API}/health`, { mode: 'cors' });
         if (govHealth.status === 200 && orchHealth.status === 200) {
+          setIsLive(true);
           fetchLiveDashboardData();
         } else {
           setIsLive(false);
