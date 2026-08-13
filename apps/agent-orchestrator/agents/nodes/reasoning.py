@@ -163,7 +163,20 @@ def agent_node(state: AgentState) -> AgentState:
             print(f"[MCP] Timeout or error fetching tools: {e}")
             return []
 
-    dynamic_tools = asyncio.run(fetch_mcp_tools_with_timeout())
+    def run_in_new_loop():
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            return new_loop.run_until_complete(fetch_mcp_tools_with_timeout())
+        finally:
+            new_loop.close()
+
+    try:
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            dynamic_tools = pool.submit(run_in_new_loop).result()
+    except RuntimeError:
+        dynamic_tools = asyncio.run(fetch_mcp_tools_with_timeout())
 
     try:
         with httpx.Client(timeout=120.0) as client:
