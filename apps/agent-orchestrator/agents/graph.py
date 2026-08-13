@@ -2,7 +2,8 @@
 agents/graph.py — LangGraph pipeline definition & compilation.
 
 Graph topology:
-  agent_node ─► generation ─► END
+  agent_node ─┬─(tool)─► execute ─► generation ─► END
+              └─(done)─► generation ─► END
 
 The compiled graph is lazily initialised by build_graph() which is
 called once during FastAPI lifespan startup with the correct checkpointer
@@ -15,6 +16,7 @@ from langgraph.graph import StateGraph, END
 
 from agents.state import AgentState
 from agents.nodes.reasoning   import agent_node
+from agents.nodes.execute     import execute_node
 from agents.nodes.generation  import generation_node
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./orchestrator.db")
@@ -23,16 +25,20 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./orchestrator.db")
 _compiled_graph = None
 _db_connection = None  # sqlite3.Connection or psycopg.Connection
 
+def _route_after_agent(state: AgentState) -> str:
+    return "execute" if state.get("pending_action") else "generation"
 
 def _build_workflow() -> StateGraph:
     """Construct and wire the LangGraph StateGraph (not compiled yet)."""
     workflow = StateGraph(AgentState)
 
     workflow.add_node("agent_node",        agent_node)
+    workflow.add_node("execute",           execute_node)
     workflow.add_node("generation",        generation_node)
 
     workflow.set_entry_point("agent_node")
-    workflow.add_edge("agent_node", "generation")
+    workflow.add_conditional_edges("agent_node", _route_after_agent, {"execute": "execute", "generation": "generation"})
+    workflow.add_edge("execute", "generation")
     workflow.add_edge("generation", END)
 
     return workflow
