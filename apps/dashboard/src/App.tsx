@@ -292,6 +292,22 @@ function App() {
           body: JSON.stringify({ input: text })
         });
         const data = await res.json();
+        if (!res.ok) {
+          const errorMsg = data.detail || 'Unknown backend error occurred.';
+          const agentMsg: ChatMessage = {
+            id: `msg_${Date.now() + 1}`,
+            sender: 'system',
+            text: `⚠️ ERROR: ${errorMsg}`,
+            timestamp: new Date().toLocaleTimeString()
+          };
+          setMessages(prev => ({
+            ...prev,
+            [activeThreadId]: [...(prev[activeThreadId] || []), agentMsg]
+          }));
+          setIsSending(false);
+          return;
+        }
+        
         
         if (data.status === 'action_required') {
           // Action intercepted (HITL)
