@@ -25,7 +25,7 @@ set -a; source .env; set +a
 : "${AUDIT_HMAC_SECRET:?Set AUDIT_HMAC_SECRET in .env}"
 
 echo "🔍 Checking Ollama connectivity at ${OLLAMA_HOST_IP}:11434..."
-if ! curl --noproxy "*" -sf --connect-timeout 5 "http://${OLLAMA_HOST_IP}:11434/api/tags" > /tmp/ollama_curl_error.txt 2>&1; then
+if ! curl --noproxy "*" -v --connect-timeout 5 "http://${OLLAMA_HOST_IP}:11434/api/tags" > /tmp/ollama_curl_error.txt 2>&1; then
     echo "❌ Cannot reach Ollama at ${OLLAMA_HOST_IP}:11434."
     echo "   Error output:"
     cat /tmp/ollama_curl_error.txt
