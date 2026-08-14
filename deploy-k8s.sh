@@ -24,6 +24,14 @@ set -a; source .env; set +a
 : "${MASTER_NODE_IP:?Set MASTER_NODE_IP in .env}"
 : "${AUDIT_HMAC_SECRET:?Set AUDIT_HMAC_SECRET in .env}"
 
+echo "🔍 Checking Ollama connectivity at ${OLLAMA_HOST_IP}:11434..."
+if ! curl -sf --connect-timeout 5 "http://${OLLAMA_HOST_IP}:11434/api/tags" > /dev/null 2>&1; then
+    echo "❌ Cannot reach Ollama at ${OLLAMA_HOST_IP}:11434."
+    echo "   Ensure Ollama is running with OLLAMA_HOST=0.0.0.0 and port 11434 is open."
+    exit 1
+fi
+echo "✅ Ollama reachable"
+
 # Compute base64 basic auth for Langfuse OTel endpoint
 LANGFUSE_BASIC_AUTH=$(echo -n "${LANGFUSE_PUBLIC_KEY:-pk-lf-master-secure-public-key}:${LANGFUSE_SECRET_KEY:-sk-lf-master-secure-secret-key}" | base64 | tr -d '\n')
 export LANGFUSE_BASIC_AUTH
@@ -170,6 +178,7 @@ kubectl exec -n "$NAMESPACE" "$MINIO_POD" -- \
 
 
 apply_template k8s/templates/02-platform.yaml
+kubectl rollout restart deployment/litellm -n "$NAMESPACE"
 echo "  ⏳ Waiting for platform services..."
 kubectl rollout status deployment/litellm       -n "$NAMESPACE" --timeout=120s
 echo "  ✅ Platform services ready"
