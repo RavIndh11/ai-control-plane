@@ -18,6 +18,7 @@ from agents.state import AgentState
 from agents.nodes.reasoning   import agent_node
 from agents.nodes.execute     import execute_node
 from agents.nodes.generation  import generation_node
+from agents.nodes.governance_shield import governance_shield_node
 
 DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./orchestrator.db")
 
@@ -26,18 +27,26 @@ _compiled_graph = None
 _db_connection = None  # sqlite3.Connection or psycopg.Connection
 
 def _route_after_agent(state: AgentState) -> str:
-    return "execute" if state.get("pending_action") else "generation"
+    return "governance_shield" if state.get("pending_action") else "generation"
+
+def _route_after_shield(state: AgentState) -> str:
+    # If the shield cleared the action (blocked) or interrupted (HITL), skip execute
+    if not state.get("pending_action") or "governance_shield_interrupt" in state.get("steps", []):
+        return "generation"
+    return "execute"
 
 def _build_workflow() -> StateGraph:
     """Construct and wire the LangGraph StateGraph (not compiled yet)."""
     workflow = StateGraph(AgentState)
 
     workflow.add_node("agent_node",        agent_node)
+    workflow.add_node("governance_shield", governance_shield_node)
     workflow.add_node("execute",           execute_node)
     workflow.add_node("generation",        generation_node)
 
     workflow.set_entry_point("agent_node")
-    workflow.add_conditional_edges("agent_node", _route_after_agent, {"execute": "execute", "generation": "generation"})
+    workflow.add_conditional_edges("agent_node", _route_after_agent, {"governance_shield": "governance_shield", "generation": "generation"})
+    workflow.add_conditional_edges("governance_shield", _route_after_shield, {"execute": "execute", "generation": "generation"})
     workflow.add_edge("execute", "generation")
     workflow.add_edge("generation", END)
 

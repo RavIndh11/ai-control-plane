@@ -352,8 +352,19 @@ def get_principal(
                 )
                 realm_roles = claims.get("realm_access", {}).get("roles", [])
                 tenant_claim = claims.get("tenant_id") or claims.get("organization") or ""
-                return {"id": claims.get("sub", ""), "email": claims.get("email", ""),
-                        "roles": realm_roles, "tenant_id": tenant_claim, "auth_method": "jwt"}
+                
+                # Extract agent identity vs human identity
+                client_id = claims.get("clientId") or claims.get("client_id")
+                is_agent = bool(client_id)
+
+                return {
+                    "id": client_id if is_agent else claims.get("sub", ""), 
+                    "email": claims.get("email", ""),
+                    "roles": realm_roles, 
+                    "tenant_id": tenant_claim, 
+                    "auth_method": "jwt",
+                    "is_agent": is_agent
+                }
             except JWTError as e:
                 raise HTTPException(status_code=401, detail=f"Invalid JWT token: {e}")
         else:
@@ -365,6 +376,7 @@ def get_principal(
         "id": x_user_id or "user_default", "email": "",
         "roles": [x_user_role or "tenant-user"],
         "tenant_id": x_tenant_id, "auth_method": "header",
+        "is_agent": False
     }
 
 

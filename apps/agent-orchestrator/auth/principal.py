@@ -49,12 +49,17 @@ def get_principal(
                     or claims.get("organization")
                     or ""
                 )
+                # Determine if this is an Agent (Client Credentials) or Human
+                client_id = claims.get("clientId") or claims.get("client_id")
+                is_agent = bool(client_id)
+                
                 return {
-                    "id":          claims.get("sub", ""),
+                    "id":          client_id if is_agent else claims.get("sub", ""),
                     "email":       claims.get("email", ""),
                     "roles":       realm_roles,
                     "tenant_id":   tenant_claim,
                     "auth_method": "jwt",
+                    "is_agent":    is_agent,
                 }
         except Exception as exc:
             raise HTTPException(status_code=401, detail=f"Invalid JWT: {exc}")
@@ -72,4 +77,5 @@ def get_principal(
         "roles":       [x_user_role or "tenant-user"],
         "tenant_id":   x_tenant_id,
         "auth_method": "header",
+        "is_agent":    False,  # Dev headers default to human
     }
