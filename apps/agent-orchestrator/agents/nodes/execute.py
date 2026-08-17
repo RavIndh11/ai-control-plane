@@ -3,7 +3,11 @@ import asyncio
 from agents.state import AgentState
 from mcp.client.sse import sse_client
 from mcp.client.session import ClientSession
+from mcp.client.session import ClientSession
+import concurrent.futures
 
+# Global thread pool to prevent concurrency leaks on every node execution
+_mcp_execute_pool = concurrent.futures.ThreadPoolExecutor(max_workers=20)
 NAMESPACE = os.getenv("NAMESPACE", "default")
 MCP_SERVER_URL = os.getenv("MCP_SERVER_URL", f"http://mcp-server.{NAMESPACE}.svc.cluster.local:8002")
 
@@ -34,9 +38,7 @@ def execute_node(state: AgentState) -> AgentState:
             new_loop.close()
 
     try:
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor() as pool:
-            tool_result = pool.submit(run_in_new_loop).result()
+        tool_result = _mcp_execute_pool.submit(run_in_new_loop).result()
         
         state["output"] = tool_result
     finally:

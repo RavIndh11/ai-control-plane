@@ -183,9 +183,15 @@ def run_thread(
     if not last_cp:
         raise HTTPException(status_code=500, detail="Checkpoint history missing")
 
+    if req.approve_action:
+        approval_chain = last_cp.state_data.get("approval_chain", [])
+        if not any(role in principal["roles"] for role in approval_chain):
+            raise HTTPException(status_code=403, detail="Forbidden: You lack the required role to approve this HITL action.")
+
     state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
-    config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
+    # Inject principal into LangGraph config so AGT shield node can map identity
+    config       = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}", "principal": principal}}
     if _HAS_LANGFUSE:
         with propagate_attributes(user_id=user_id, session_id=thread_id, metadata={"tenant_id": tenant_id}):
             final_state = _execute_agent_run(state_to_run, config, tenant_id, user_id, thread_id, thread.agent_type)
@@ -241,6 +247,11 @@ async def stream_thread(
     if not last_cp:
         raise HTTPException(status_code=500, detail="Checkpoint history missing")
 
+    if req.approve_action:
+        approval_chain = last_cp.state_data.get("approval_chain", [])
+        if not any(role in principal["roles"] for role in approval_chain):
+            raise HTTPException(status_code=403, detail="Forbidden: You lack the required role to approve this HITL action.")
+
     state_to_run = _resolve_state(req, last_cp.state_data, tenant_id, user_id, thread_id, thread.agent_type)
 
     async def event_generator() -> AsyncGenerator[str, None]:
@@ -251,7 +262,7 @@ async def stream_thread(
         await asyncio.sleep(0)
 
         loop = asyncio.get_event_loop()
-        config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}"}}
+        config = {"configurable": {"thread_id": f"{tenant_id}:{thread_id}", "principal": principal}}
         try:
             if _HAS_LANGFUSE:
                 def _run_with_attrs():

@@ -327,10 +327,7 @@ def _get_jwks() -> Optional[Dict]:
 
 
 def get_principal(
-    request: Request,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
-    x_user_role:  Optional[str] = Header(None, alias="X-User-Role"),
-    x_user_id:    Optional[str] = Header(None, alias="X-User-ID"),
+    request: Request
 ) -> Dict[str, Any]:
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer ") and HAS_JOSE and KEYCLOAK_JWKS_URL:
@@ -370,14 +367,11 @@ def get_principal(
         else:
             raise HTTPException(status_code=503, detail="Auth service unavailable")
 
-    if not x_tenant_id:
-        raise HTTPException(status_code=401, detail="Unauthorized: Provide a Bearer JWT or X-Tenant-ID header.")
-    return {
-        "id": x_user_id or "user_default", "email": "",
-        "roles": [x_user_role or "tenant-user"],
-        "tenant_id": x_tenant_id, "auth_method": "header",
-        "is_agent": False
-    }
+    # If we fall through the JWT check, deny access. (Dev header fallbacks removed for security)
+    raise HTTPException(
+        status_code=401, 
+        detail="Unauthorized: Provide a valid Bearer JWT."
+    )
 
 
 def get_db(principal: Dict[str, Any] = Depends(get_principal)):

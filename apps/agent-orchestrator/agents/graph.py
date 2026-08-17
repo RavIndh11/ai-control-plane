@@ -30,9 +30,14 @@ def _route_after_agent(state: AgentState) -> str:
     return "governance_shield" if state.get("pending_action") else "generation"
 
 def _route_after_shield(state: AgentState) -> str:
+    # If action was explicitly approved by HITL, we execute it
+    if state.get("action_approved"):
+        return "execute"
+        
     # If the shield cleared the action (blocked) or interrupted (HITL), skip execute
     if not state.get("pending_action") or "governance_shield_interrupt" in state.get("steps", []):
         return "generation"
+        
     return "execute"
 
 def _build_workflow() -> StateGraph:

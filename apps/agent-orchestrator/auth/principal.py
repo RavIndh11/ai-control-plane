@@ -16,15 +16,11 @@ from auth.jwt import HAS_JOSE, KEYCLOAK_JWKS_URL, verify_jwt
 
 
 def get_principal(
-    request: Request,
-    x_tenant_id: Optional[str] = Header(None, alias="X-Tenant-ID"),
-    x_user_role: Optional[str]  = Header(None, alias="X-User-Role"),
-    x_user_id: Optional[str]    = Header(None, alias="X-User-ID"),
+    request: Request
 ) -> Dict[str, Any]:
     """
     Resolve the caller principal from:
       - Authorization: Bearer <jwt>   (Keycloak, production)
-      - X-Tenant-ID / X-User-Role     (header fallback, local dev)
 
     Returns a normalized principal dict:
       {
@@ -65,17 +61,9 @@ def get_principal(
             raise HTTPException(status_code=401, detail=f"Invalid JWT: {exc}")
         raise HTTPException(status_code=503, detail="Auth service (Keycloak JWKS) unavailable")
 
-    # ── Mode 2: Header fallback (local dev) ───────────────────────────────────
-    if not x_tenant_id:
-        raise HTTPException(
-            status_code=401,
-            detail="Unauthorized: Provide a Bearer JWT or X-Tenant-ID header (dev mode).",
-        )
-    return {
-        "id":          x_user_id or "user_default",
-        "email":       "",
-        "roles":       [x_user_role or "tenant-user"],
-        "tenant_id":   x_tenant_id,
-        "auth_method": "header",
-        "is_agent":    False,  # Dev headers default to human
-    }
+    
+    # If we fall through the JWT check, deny access. (Dev header fallbacks removed for security)
+    raise HTTPException(
+        status_code=401,
+        detail="Unauthorized: Provide a valid Bearer JWT.",
+    )
