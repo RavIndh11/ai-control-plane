@@ -1,8 +1,8 @@
-apiVersion: governance.toolkit/v1
+acsVersion: "0.3.1-beta"
 name: mcp-policy
-default_action: allow
+defaultAction: allow
 rules:
   - name: block-user-data
-    condition: "action.type == 'query_user_data'"
+    condition: "tool.name == 'query_user_data'"
     action: deny
     description: "Strict AuthZ required for user data"

@@ -11,30 +11,59 @@ from starlette.responses import JSONResponse
 
 import yaml
 
-class GovernanceDenied(Exception):
-    pass
+try:
+    from agent_governance.mcp import AgtMcpAdapter, ACSException
+except ImportError:
+    class ACSException(Exception):
+        pass
 
-def govern(policy: str):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    class AgtMcpAdapter:
+        def __init__(self, policy_path: str):
+            self.policy_path = policy_path
+
+        def _load_policy(self):
+            import yaml
             try:
-                with open(policy, "r") as f:
-                    pol = yaml.safe_load(f)
+                with open(self.policy_path, "r") as f:
+                    return yaml.safe_load(f)
             except Exception as e:
                 logging.error(f"Policy load failed: {e}")
-                return func(*args, **kwargs)
+                return {"defaultAction": "allow", "rules": []}
+
+        def filter_tools(self, tools: list) -> list:
+            allowed_tools = []
+            for t in tools:
+                try:
+                    self.evaluate_execution(t.name, {})
+                    allowed_tools.append(t)
+                except ACSException:
+                    pass
+            return allowed_tools
+
+        def evaluate_execution(self, tool_name: str, arguments: dict | None) -> None:
+            policy = self._load_policy()
+            default_action = policy.get("defaultAction", "allow")
             
-            action_val = kwargs.get("action")
-            for rule in pol.get("rules", []):
-                cond = rule.get("condition", "")
-                if "action.type ==" in cond and action_val:
-                    target = cond.split("==")[1].strip().strip("'").strip('"')
-                    if action_val == target and rule.get("action") == "deny":
-                        raise GovernanceDenied(f"Policy '{rule.get('name')}' denied action '{action_val}': {rule.get('description')}")
-            
-            return func(*args, **kwargs)
-        return wrapper
-    return decorator
+            for rule in policy.get("rules", []):
+                condition = rule.get("condition", "")
+                if condition:
+                    # Basic robust evaluation for ACS conditions
+                    eval_str = condition.replace("tool.name", f"'{tool_name}'").replace("action.type", f"'{tool_name}'")
+                    try:
+                        match = eval(eval_str, {"__builtins__": {}}, {})
+                    except Exception:
+                        match = False
+                    
+                    if match:
+                        if rule.get("action") == "deny":
+                            raise ACSException(f"Policy '{rule.get('name')}' denied action '{tool_name}': {rule.get('description')}")
+                        elif rule.get("action") == "allow":
+                            return
+                            
+            if default_action == "deny":
+                raise ACSException(f"Default policy denied action '{tool_name}'")
+
+agt_adapter = AgtMcpAdapter(policy_path="policy.yaml")
 # Create an MCP server instance
 server = Server("ai-control-plane-mcp")
 
@@ -43,7 +72,7 @@ async def handle_list_tools() -> list[types.Tool]:
     """
     List available tools for the MCP server.
     """
-    return [
+    all_tools = [
         types.Tool(
             name="fetch_compliance_policy",
             description="Fetch the latest SOC2 or GDPR compliance policies for the tenant",
@@ -78,16 +107,15 @@ async def handle_list_tools() -> list[types.Tool]:
             },
         )
     ]
+    # Filter the tool list based on AGT policies
+    return agt_adapter.filter_tools(all_tools)
 
-@govern(policy="policy.yaml")
 def do_fetch_compliance_policy(action: str, policy_type: str) -> str:
     return f"Content for {policy_type} Policy: All data must be encrypted at rest and in transit."
 
-@govern(policy="policy.yaml")
 def do_query_user_data(action: str, user_id: str) -> str:
     return f"User Data for {user_id}: Name: John Doe, Plan: Enterprise"
 
-@govern(policy="policy.yaml")
 def do_check_kubernetes_pods(action: str, namespace: str) -> str:
     try:
         import httpx
@@ -122,6 +150,9 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
     Execute a tool.
     """
     try:
+        # Evaluate execution based on AGT policies
+        agt_adapter.evaluate_execution(name, arguments)
+        
         if name == "fetch_compliance_policy":
             policy_type = arguments.get("policy_type") if arguments else "SOC2"
             text_val = do_fetch_compliance_policy(action=name, policy_type=policy_type)
@@ -136,7 +167,7 @@ async def handle_call_tool(name: str, arguments: dict | None) -> list[types.Text
             
         return [types.TextContent(type="text", text=text_val)]
     except Exception as e:
-        if "GovernanceDenied" in str(type(e).__name__):
+        if "ACSException" in str(type(e).__name__) or "GovernanceDenied" in str(type(e).__name__):
             gov_url = os.getenv("GOVERNANCE_ENGINE_URL", "http://governance-engine.default.svc.cluster.local:8000")
             try:
                 httpx.post(

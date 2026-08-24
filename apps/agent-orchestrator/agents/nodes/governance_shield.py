@@ -6,14 +6,8 @@ from langchain_core.runnables import RunnableConfig
 from agents.state import AgentState
 
 # Microsoft AGT Imports
-try:
-    from agent_governance.policy import AgentEvaluationPolicy
-    from agent_governance.models import AgentIdentity, ActionRequest
-except ImportError:
-    # Stub for typing if package isn't strictly loaded in the IDE env
-    AgentEvaluationPolicy = Any
-    AgentIdentity = Any
-    ActionRequest = Any
+from agent_governance.policy import AgentEvaluationPolicy
+from agent_governance.models import AgentIdentity, ActionRequest
 
 def governance_shield_node(state: AgentState, config: RunnableConfig) -> AgentState:
     """
@@ -37,11 +31,10 @@ def governance_shield_node(state: AgentState, config: RunnableConfig) -> AgentSt
     )
 
     # 3. Define Proactive AGT Policy based on the mapped identity
-    # In production, this would be loaded from the Governance Engine / Database
+    # Load the policy from the ACS manifest file
     policy = AgentEvaluationPolicy(
-        identity=agt_identity,
-        allowed_tools=["search", "read_db"] if "autonomous-agent" not in roles else ["*"],
-        require_hitl_for=["execute_sql", "write_file", "terminal_executor"]
+        policy_path="apps/agent-orchestrator/policies/policy.yaml",
+        identity=agt_identity
     )
 
     # 4. Evaluate the Action
@@ -58,6 +51,7 @@ def governance_shield_node(state: AgentState, config: RunnableConfig) -> AgentSt
         
         if getattr(eval_result, "requires_hitl", False):
             # AGT triggered a Human-in-the-Loop interrupt
+            state["requires_hitl"] = True
             state["steps"] = list(state.get("steps", [])) + ["governance_shield_interrupt"]
             state["approval_chain"] = getattr(eval_result, "required_roles", ["tenant-admin"])
         

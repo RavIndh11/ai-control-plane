@@ -1,13 +1,23 @@
-apiVersion: governance.toolkit/v1
-name: production-policy
-default_action: allow
-rules:
-  - name: block-destructive
-    condition: "action.type in ['drop', 'delete', 'truncate']"
+agent_control_specification_version: "0.3.1-beta"
+metadata:
+  name: production-policy
+  description: "Proactive governance policy for agent actions"
+
+policies:
+  block_destructive:
+    type: inline
     action: deny
+    condition: "action.type in ['drop', 'delete', 'truncate']"
     description: "Destructive operations require human approval"
 
-  - name: require-approval-for-send
-    condition: "action.type == 'send_email'"
+  require_approval_for_send:
+    type: inline
     action: require_approval
+    condition: "action.type == 'send_email'"
     approvers: ["security-team"]
+
+intervention_points:
+  pre_tool_call:
+    policies:
+      - block_destructive
+      - require_approval_for_send
