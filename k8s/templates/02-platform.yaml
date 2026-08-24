@@ -12,19 +12,19 @@ metadata:
 data:
   config.yaml: |
     model_list:
-      - model_name: mistral-cpu
+      - model_name: qwen3.5:9b
         litellm_params:
-          model: ollama/steamdj/mistral-cpu-only
+          model: ollama/qwen3.5:9b
           api_base: http://${OLLAMA_HOST_IP}:11434
           tpm: 100000
           rpm: 60
-      - model_name: llama3.1-cpu
+      - model_name: gemma4:12b
         litellm_params:
-          model: ollama/steamdj/llama3.1-cpu-only
+          model: ollama/gemma4:12b
           api_base: http://${OLLAMA_HOST_IP}:11434
           tpm: 100000
           rpm: 40
-      - model_name: qwen3-embedding
+      - model_name: qwen3-embedding:4b
         litellm_params:
           model: ollama/qwen3-embedding:4b
           api_base: http://${OLLAMA_HOST_IP}:11434
