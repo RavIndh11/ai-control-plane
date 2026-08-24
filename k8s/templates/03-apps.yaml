@@ -78,11 +78,11 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "governance-engine"
             - name: KEYCLOAK_JWKS_URL
-              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+              value: "${KEYCLOAK_JWKS_URL}"
             - name: KEYCLOAK_AUDIENCE
               value: "${KEYCLOAK_AUDIENCE}"
             - name: KEYCLOAK_ISSUER
-              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master"
+              value: "${KEYCLOAK_ISSUER}"
           readinessProbe:
             httpGet:
               path: /health
@@ -204,11 +204,11 @@ spec:
             - name: LITELLM_MASTER_KEY
               value: "sk-litellm-master-secure-pass"
             - name: KEYCLOAK_JWKS_URL
-              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master/protocol/openid-connect/certs"
+              value: "${KEYCLOAK_JWKS_URL}"
             - name: KEYCLOAK_AUDIENCE
               value: "${KEYCLOAK_AUDIENCE}"
             - name: KEYCLOAK_ISSUER
-              value: "http://keycloak.${NAMESPACE}.svc.cluster.local:8080/realms/master"
+              value: "${KEYCLOAK_ISSUER}"
           readinessProbe:
             httpGet:
               path: /health
