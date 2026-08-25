@@ -33,7 +33,7 @@ data:
     router_settings:
       routing_strategy: least-busy
       num_retries: 2
-      timeout: 60
+      timeout: 300
       retry_after: 5
     litellm_settings:
       drop_params: true
